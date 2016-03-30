@@ -10,6 +10,9 @@ ENV CONSUL_SHA256SUM=abdf0e1856292468e2c9971420d73b805e93888e006c76324ae39416edc
 ENV DOCKER_BASE_VERSION=0.0.4
 ENV DOCKER_BASE_SHA256SUM=5262aa8379782d42f58afbda5af884b323ff0b08a042e7915eb1648891a8da00
 
+# Interface to listen on
+#ENV CONSUL_CLIENT_INTERFACE eth0
+
 # Create a consul user and group first so the IDs get set the same way, even as
 # the rest of this may change over time.
 RUN addgroup consul && \

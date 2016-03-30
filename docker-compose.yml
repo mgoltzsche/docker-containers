@@ -1,0 +1,18 @@
+version: '2'
+services:
+  consul:
+    image: algorythm/consul:v1
+    command: "/entrypoint-consul.sh server -bootstrap-expect 1 -ui"
+    ports:
+     - "8500:8500" # consul web UI
+     - "8600:8600" # consul DNS
+    env_file:
+     - consul/consul.env
+  apacheds:
+    image: algorythm/apacheds:v1
+    depends_on:
+     - consul
+    ports:
+     - "10389:10389" # LDAP port
+    links:
+     - "consul"

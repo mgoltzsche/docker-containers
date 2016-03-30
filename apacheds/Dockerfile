@@ -2,7 +2,7 @@ FROM algorythm/consul-service-openjdk:8
 MAINTAINER "Max Goltzsche" <max.goltzsche@algorythm.de>
 
 ENV APACHEDS_VERSION 2.0.0-M21
-ENV DOMAIN algorythm.de
+ENV LDAP_DOMAIN algorythm.de
 
 RUN addgroup apacheds && \
 	adduser -S -G apacheds apacheds
@@ -13,17 +13,22 @@ RUN cd /tmp && \
 	mkdir /apacheds/ldif && \
 	mv /apacheds/instances/default/conf/config.ldif /apacheds/ldif/default-config.ldif && \
 	chown -R apacheds:apacheds /apacheds && \
+	echo -n 'secret' > /etc/apachedspw && \
+	chmod 400 /etc/apachedspw && \
 	rm apacheds.tar.gz && \
 	rm /apacheds/bin/*.bat
+ADD config/reset-admin-password.sh /apacheds/bin/
 ADD config/setup-instance.sh /apacheds/bin/
-#ADD config/setup-partition.ldif /apacheds/ldif/
-#ADD config/delete-example.ldif /apacheds/ldif/
-ADD entrypoint.sh /apacheds.sh
-RUN chmod 544 /apacheds.sh && \
-	chmod 544 /apacheds/bin/setup-instance.sh
-RUN /apacheds/bin/setup-instance.sh $DOMAIN
-RUN apk add --update openldap-clients
+ADD config/consul-apacheds-service.json /consul/config/local/apacheds.json
+ADD config/algorythm-backup.ldif /apacheds/ldif/
+ADD entrypoint.sh /entrypoint-apacheds.sh
+RUN chmod 544 /entrypoint-apacheds.sh && \
+	chmod 700 /apacheds/bin/reset-admin-password.sh && \
+	chmod 544 /apacheds/bin/setup-instance.sh && \
+	chmod 444 /consul/config/local/apacheds.json
+RUN apk add --no-cache --update openldap-clients
+RUN /apacheds/bin/setup-instance.sh $LDAP_DOMAIN
 EXPOSE 10389 10636
 
-ENTRYPOINT ["/apacheds.sh"]
+ENTRYPOINT ["/entrypoint-apacheds.sh"]
 CMD ["run"]

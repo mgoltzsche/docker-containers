@@ -17,3 +17,7 @@ run:
 bash:
 	# Run bash in container interactively
 	docker run -it -p 10389:10389 algorythm/apacheds:v1 bash
+
+join:
+	# Execute interactive bash on running container
+	docker exec -it `docker ps | grep apacheds | cut -d ' ' -f 1` /bin/bash

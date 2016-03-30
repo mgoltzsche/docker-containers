@@ -40,3 +40,7 @@ sed -e "s/ads-partitionid: example/ads-partitionid: $PARTITION_ID/" \
     -e "s/ads-saslRealms: .*/ads-saslRealms: $SASL_REALM/" \
     -e "/^ .*/d" \
     $APACHEDS_DIR/ldif/default-config.ldif | uniq > $APACHEDS_DIR/instances/default/conf/config.ldif
+
+# TODO: to change ports
+#     -e "s/ads-systemport: 10389/ads-systemport: 389/" \
+#    -e "s/ads-systemport: 10636/ads-systemport: 636/" \

@@ -1,0 +1,7 @@
+{
+	"service": {
+		"name": "apacheds",
+		"tags": ["apacheds", "java", "auth", "ldap"],
+		"ports": 10389
+	}
+}
