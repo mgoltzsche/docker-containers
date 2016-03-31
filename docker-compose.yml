@@ -1,7 +1,7 @@
 version: '2'
 services:
   consul:
-    image: algorythm/consul:v1
+    image: algorythm/consul:latest
     command: "/entrypoint-consul.sh server -bootstrap-expect 1 -ui"
     ports:
      - "8500:8500" # consul web UI
@@ -9,7 +9,7 @@ services:
     env_file:
      - consul/consul.env
   apacheds:
-    image: algorythm/apacheds:v1
+    image: algorythm/apacheds:latest
     depends_on:
      - consul
     ports:
