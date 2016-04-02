@@ -1,0 +1,32 @@
+# 2.2.10: /etc/dovecot/dovecot.conf
+# OS: Linux 3.10.0-123.8.1.el7.x86_64 x86_64 CentOS Linux release 7.2.1511 (Core)  
+auth_mechanisms = plain login
+base_dir = /var/run/dovecot/
+info_log_path = /var/log/dovecot.info
+log_path = /var/log/dovecot
+log_timestamp = "%Y-%m-%d %H:%M:%S "
+mail_gid = vmail
+mail_uid = vmail
+passdb {
+  args = /etc/dovecot/dovecot-ldap-default.conf.ext
+  driver = ldap
+}
+protocols = imap pop3
+service auth {
+  unix_listener /var/spool/postfix/private/auth {
+    group = postfix
+    mode = 0600
+    user = postfix
+  }
+  user = root
+}
+ssl = required
+ssl_cert = </etc/ssl/certs/algorythm.de.crt
+ssl_key = </etc/ssl/private/algorythm.de.key
+userdb {
+  driver = prefetch
+}
+userdb {
+  args = /etc/dovecot/dovecot-ldap-default-userdb.conf.ext
+  driver = ldap
+}

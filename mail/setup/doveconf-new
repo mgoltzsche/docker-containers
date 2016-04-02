@@ -1,0 +1,32 @@
+# 2.2.20 (46a35dcdb936): /etc/dovecot/dovecot.conf
+# OS: Linux 3.13.0-83-generic x86_64  
+namespace inbox {
+  inbox = yes
+  location = 
+  mailbox Drafts {
+    special_use = \Drafts
+  }
+  mailbox Junk {
+    special_use = \Junk
+  }
+  mailbox Sent {
+    special_use = \Sent
+  }
+  mailbox "Sent Messages" {
+    special_use = \Sent
+  }
+  mailbox Trash {
+    special_use = \Trash
+  }
+  prefix = 
+}
+passdb {
+  args = scheme=CRYPT username_format=%u /etc/dovecot/users
+  driver = passwd-file
+}
+ssl_cert = </etc/ssl/dovecot/server.pem
+ssl_key = </etc/ssl/dovecot/server.key
+userdb {
+  args = username_format=%u /etc/dovecot/users
+  driver = passwd-file
+}

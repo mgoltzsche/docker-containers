@@ -1,0 +1,80 @@
+# See /usr/share/postfix/main.cf.dist for a commented, more complete version
+
+# Disable backwards compatibility
+compatibility_level = 2
+
+smtpd_banner = $myhostname ESMTP $mail_name
+# New in 3.0 but not compiled
+smtputf8_enable = no
+biff = no
+
+# appending .domain is the MUA's job.
+append_dot_mydomain = yes
+
+# generate "delayed mail" warnings
+delay_warning_time = 4h
+
+readme_directory = no
+queue_directory = /var/spool/postfix
+
+alias_maps=hash:/etc/aliases
+myhostname = #{MACHINE_FQN}
+mydestination = localhost, $myhostname
+mynetworks = 127.0.0.0/8 [::ffff:127.0.0.0]/104 [::1]/128
+relayhost =
+mailbox_size_limit = 0
+recipient_delimiter = +
+inet_interfaces = all
+inet_protocols = ipv4
+home_mailbox = Maildir/
+
+virtual_alias_maps = "ldap:/etc/postfix/ldap/virtual_aliases.cf"
+virtual_mailbox_domains = "ldap:/etc/postfix/ldap/virtual_domains.cf"
+virtual_mailbox_maps = "ldap:/etc/postfix/ldap/virtual_mailboxes.cf"
+# Following line maybe not required because it seems to have no effect
+#virtual_mailbox_base = /var/vmail
+virtual_uid_maps = static:5000
+virtual_gid_maps = static:5000
+
+# TLS parameters
+smtpd_use_tls = yes
+#smtpd_tls_wrappermode=yes # workaround for clients likek outlook to listen on port 465
+smtpd_tls_mandatory_protocols = SSLv3, TLSv1
+smtpd_tls_mandatory_ciphers = medium, high
+smtpd_tls_cert_file = /etc/ssl/certs/server.crt
+smtpd_tls_key_file = /etc/ssl/private/server.key
+# smtpd_tls_CAfile = /etc/pki/tls/root.crt # ca certificate
+smtpd_tls_loglevel = 1
+smtpd_tls_session_cache_database = btree:$data_directory/smtpd_tls_cache
+smtpd_tls_session_cache_timeout = 3600s
+# smtpd_tls_auth_only = yes
+tls_random_source = dev:/dev/urandom
+
+# See /usr/share/doc/postfix/TLS_README.gz in the postfix-doc package for
+# information on enabling SSL in the smtp client.
+
+# SASL parameters
+smtpd_sasl_auth_enable = yes
+smtpd_sasl_type = dovecot
+smtpd_sasl_path = private/auth
+smtpd_sasl_security_options = noanonymous
+smtpd_sasl_authenticated_header = yes
+smtpd_sasl_local_domain = $myhostname
+broken_sasl_auth_clients = yes
+
+# Set SMTP permissions/restrictions
+smtpd_sender_login_maps = "ldap:/etc/postfix/ldap/virtual_senders.cf"
+smtpd_sender_restrictions = permit_mynetworks,
+	reject_non_fqdn_sender,
+	reject_unknown_sender_domain,
+	reject_sender_login_mismatch
+smtpd_recipient_restrictions = reject_unknown_sender_domain,
+	reject_unknown_recipient_domain,
+	reject_non_fqdn_recipient,
+	permit_mynetworks,
+	permit_sasl_authenticated,
+	reject_unauth_destination,
+	reject_rbl_client dnsbl.sorbs.net,
+	reject_rbl_client zen.spamhaus.org,
+	reject_rbl_client bl.spamcop.net
+smtpd_data_restrictions = reject_unauth_pipelining
