@@ -2,6 +2,7 @@ version: '2'
 services:
   consul:
     image: algorythm/consul:latest
+    hostname: consul.algorythm.de
     command: "/entrypoint-consul.sh server -bootstrap-expect 1 -ui"
     ports:
      - "8500:8500" # consul web UI
@@ -10,6 +11,7 @@ services:
      - consul/consul.env
   apacheds:
     image: algorythm/apacheds:latest
+    hostname: auth.algorythm.de
     depends_on:
      - consul
     ports:

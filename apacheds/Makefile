@@ -8,7 +8,7 @@ build:
 
 run:
 	# Run apacheds container
-	docker run algorythm/apacheds:latest
+	docker run -h auth.algorythm.de algorythm/apacheds:latest
 
 logs:
 	# Show log of running container

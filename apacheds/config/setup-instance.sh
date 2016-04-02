@@ -4,8 +4,7 @@
 # Usage: setup-instance.sh DOMAIN [INSTANCE_ID]          #
 ##########################################################
 
-DOMAIN=${1:-$(dnsdomainname)} # Use dns domain name if not provided # TODO: fix, default value doesn't work
-HOST=$(hostname)
+DOMAIN=${1:-$(hostname -d)} # Use host's domain name if not provided
 
 if [ -z "$DOMAIN" ]; then
 	echo "Usage: $0 DOMAIN [INSTANCE_ID]" >&2
@@ -13,10 +12,10 @@ if [ -z "$DOMAIN" ]; then
 	exit 1
 fi
 
-PARTITION_ID=${2:-$(sed 's/\..*//' <<< $DOMAIN)} # First domain segment as partition ID # TODO: fix, default value doesn't work
+PARTITION_ID=${2:-$(sed 's/\..*//' <<< $DOMAIN)} # First domain segment as partition ID
 PARTITION_SUFFIX="dc=${DOMAIN/./,dc=}"
 KERBEROS_REALM=${DOMAIN^^} # upper case domain
-SASL_HOST="$HOST.$DOMAIN"
+SASL_HOST=$(hostname -f)
 SASL_PRINCIPAL="ldap\/$SASL_HOST@$KERBEROS_REALM"
 SASL_REALM=$DOMAIN
 APACHEDS_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/.."
