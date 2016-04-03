@@ -48,27 +48,6 @@ LDAP_SENDERS_CF=$(./rendertpl.sh postfix/ldap.cf.tpl \
 	RESULT_ATTRIBUTE=mail
 ) || exit 1
 
-# Enable submission (authenticated mail submission) and smtps according to http://wiki.alpinelinux.org/wiki/ISP_Mail_Server_HowTo
-if [ $(grep -c '^submission' /etc/postfix/master.cf) -eq 0 ]; then
-cat >> /etc/postfix/master.cf <<EOF
-submission inet n       -       n       -       -       smtpd
-  -o smtpd_tls_security_level=encrypt
-  -o smtpd_sasl_auth_enable=yes
-  -o smtpd_client_restrictions=permit_sasl_authenticated,reject
-  -o milter_macro_daemon_name=ORIGINATING
-EOF
-fi
-if [ $(grep -c '^smtps' /etc/postfix/master.cf) -eq 0 ]; then
-cat >> /etc/postfix/master.cf <<EOF
-smtps     inet  n       -       n       -       -       smtpd
-  -o smtpd_tls_security_level=encrypt
-  -o smtpd_tls_wrappermode=yes
-  -o smtpd_sasl_auth_enable=yes
-  -o smtpd_client_restrictions=permit_sasl_authenticated,reject
-  -o milter_macro_daemon_name=ORIGINATING
-EOF
-fi
-
 cd /etc/postfix &&
 mkdir -p ldap &&
 chmod 00755 ldap &&

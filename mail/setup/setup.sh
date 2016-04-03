@@ -5,7 +5,9 @@ DOMAIN=$(hostname -d)
 if [ -z "$DOMAIN" ]; then
 	echo 'hostname -d is undefined.' >&2
 	echo 'Setup a proper hostname by adding an entry to /etc/hosts like this:' >&2
-	echo ' 172.17.0.2      mail.algorythm.de mail' >&2
+	echo ' 172.17.0.2      mail.example.org mail' >&2
+	echo 'When using docker start the container with the -h option' >&2
+	echo 'to configure the hostname. E.g.: -h mail.example.org' >&2
 	exit 1
 fi
 

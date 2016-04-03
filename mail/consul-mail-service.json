@@ -1,0 +1,7 @@
+{
+	"service": {
+		"name": "mail",
+		"tags": ["mail", "postfix", "dovecot", "smtp", "imap", "pop3"],
+		"ports": 25
+	}
+}

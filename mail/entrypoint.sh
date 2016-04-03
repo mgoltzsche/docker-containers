@@ -1,5 +1,6 @@
 #!/bin/dumb-init /bin/sh
 
+rsyslogd # Start rsyslog (required for postfix logging)
 /setup/setup.sh || exit 1 # setup postfix+dovecot+ldap configuration
 
 startConsulClient() {
@@ -9,6 +10,7 @@ startConsulClient() {
 
 startPostfix() {
 	/usr/sbin/postfix -c /etc/postfix start >/dev/null 2>&1
+	tail -f /var/log/maillog &
 #	echo $? > /var/run/postfix
 }
 
@@ -21,7 +23,9 @@ startDovecot() {
 	DOVECOT_BASEDIR=$(/usr/sbin/dovecot -c $DOVECOT_CONF -a | grep '^base_dir = ' | sed 's/^base_dir = //')
 	mkdir -p "$DOVECOT_BASEDIR" && chown dovecot:dovecot "$DOVECOT_BASEDIR" && chmod 0755 "$DOVECOT_BASEDIR" &&
 	/usr/sbin/dovecot -c "$DOVECOT_CONF"
-	echo $? > "$DOVECOT_BASEDIR/master.pid"
+	tail -f /var/log/dovecot.info &
+	tail -f /var/log/dovecot &
+#	echo $? > "$DOVECOT_BASEDIR/master.pid"
 }
 
 #stopDovecot() {
