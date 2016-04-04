@@ -1,7 +1,11 @@
+# postfix 3.0.3 configuration: /etc/postfix/main.cf
 # See /usr/share/postfix/main.cf.dist for a commented, more complete version
 
 # Disable backwards compatibility
 compatibility_level = 2
+
+# Syslog facility
+syslog_facility = mail
 
 smtpd_banner = $myhostname ESMTP $mail_name
 # New in 3.0 but not compiled
@@ -18,7 +22,7 @@ readme_directory = no
 queue_directory = /var/spool/postfix
 
 alias_maps=hash:/etc/aliases
-myhostname = #{MACHINE_FQN}
+myhostname = ${MACHINE_FQN}
 mydestination = localhost, $myhostname
 mynetworks = 127.0.0.0/8 [::ffff:127.0.0.0]/104 [::1]/128
 relayhost =
@@ -31,8 +35,7 @@ home_mailbox = Maildir/
 virtual_alias_maps = "ldap:/etc/postfix/ldap/virtual_aliases.cf"
 virtual_mailbox_domains = "ldap:/etc/postfix/ldap/virtual_domains.cf"
 virtual_mailbox_maps = "ldap:/etc/postfix/ldap/virtual_mailboxes.cf"
-# Following line maybe not required because it seems to have no effect
-#virtual_mailbox_base = /var/vmail
+virtual_mailbox_base = /var/vmail
 virtual_uid_maps = static:5000
 virtual_gid_maps = static:5000
 
