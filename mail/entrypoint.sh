@@ -3,7 +3,9 @@
 # Start rsyslog to collect postfix & dovecot logs and print them to stdout
 rsyslogd -n -f /etc/rsyslog.conf &
 
-# setup postfix+dovecot+ldap configuration
+# Setup consul dns resolution
+setup-consul-dns
+# Setup postfix+dovecot+ldap configuration
 setup-mail || exit 1
 
 startConsulClient() {

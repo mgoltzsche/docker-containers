@@ -6,6 +6,7 @@ LDAP_HOST=ldap
 LDAP_PORT=10389
 LDAP_USER_DN="cn=vmail,ou=Special Users,$LDAP_SUFFIX"
 LDAP_PASSWORD="asdf"
+LDAP_MAILBOX_SEARCH_BASE="$LDAP_SUFFIX"
 LDAP_DOMAIN_SEARCH_BASE="ou=Domains,$LDAP_SUFFIX"
 
 if [ -z "$DOMAIN" ]; then # Terminate when domain name cannot be determined
@@ -16,6 +17,17 @@ if [ -z "$DOMAIN" ]; then # Terminate when domain name cannot be determined
 	echo 'to configure the hostname. E.g.: -h mail.example.org' >&2
 	exit 1
 fi
+
+echo <<EOF
+Configuring mailing with:
+  DOMAIN:                   $DOMAIN
+  LDAP_HOST:                $LDAP_HOST
+  LDAP_PORT:                $LDAP_PORT
+  LDAP_SUFFIX:              $LDAP_SUFFIX
+  LDAP_USER_DN:             $LDAP_USER_DN
+  LDAP_MAILBOX_SEARCH_BASE: $LDAP_MAILBOX_SEARCH_BASE
+  LDAP_DOMAIN_SEARCH_BASE:  $LDAP_DOMAIN_SEARCH_BASE
+EOF
 
 setupSslCertificate() {
 	# Generate SSL certificate if not available
@@ -30,7 +42,6 @@ setupSslCertificate() {
 setupPostfix() {
 	LDAP_DOMAIN_QUERY='(associatedDomain=%s)'
 	LDAP_DOMAIN_ATTR='associatedDomain'
-	LDAP_MAILBOX_SEARCH_BASE="$LDAP_SUFFIX"
 	LDAP_MAILBOX_QUERY='(&(objectClass=inetOrgPerson)(|(mail=%s)(mailAlternateAddress=%s)))'
 
 	echo "Configuring postfix ..."
@@ -76,7 +87,7 @@ dn = $LDAP_USER_DN
 dnpass = $LDAP_PASSWORD
 tls = no
 auth_bind = yes
-base = $LDAP_DOMAIN_SEARCH_BASE
+base = $LDAP_MAILBOX_SEARCH_BASE
 user_attrs = =mail=maildir:/var/vmail/%d/%n/
 user_filter = (&(objectClass=inetOrgPerson)(mail=%u))
 pass_attrs = 

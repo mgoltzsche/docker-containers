@@ -67,8 +67,9 @@ EXPOSE 8400 8500 8600 8600/udp
 # entry point script. The entry point script also uses dumb-init as the top-level
 # process to reap any zombie processes created by Consul sub-processes.
 ADD config/entrypoint.sh /entrypoint-consul.sh
+ADD config/setup-consul-dns.sh /sbin/setup-consul-dns
 RUN chown consul:consul /entrypoint-consul.sh && \
-	chmod 554 /entrypoint-consul.sh
+	chmod 554 /entrypoint-consul.sh /sbin/setup-consul-dns
 ENTRYPOINT ["/entrypoint-consul.sh"]
 
 # By default you'll get a single-node development server that stores everything
