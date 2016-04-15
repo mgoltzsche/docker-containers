@@ -9,3 +9,5 @@ RESOLV_CONF_LINE="nameserver $BRIDGE_IP"
 
 # Add bridge IP as nameserver to /etc/resolv.conf
 [ $(grep -Fc "$RESOLV_CONF_LINE" /etc/resolv.conf) -ne 0 ] || echo "$RESOLV_CONF_LINE" >> /etc/resolv.conf
+
+#$(ipcalc -ns $IP | sed s/NETWORK=// | sed 's/[^\.]$//')$(ipcalc -ns $IP | sed s/NETWORK=// | sed 's/.*\.//')

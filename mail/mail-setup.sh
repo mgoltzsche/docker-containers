@@ -2,7 +2,7 @@
 
 DOMAIN=$(hostname -d)
 LDAP_SUFFIX='dc='$(echo -n "$DOMAIN" | sed s/\\./,dc=/g)
-LDAP_HOST=ldap
+LDAP_HOST=ldap.service.dc1.consul
 LDAP_PORT=10389
 LDAP_USER_DN="cn=vmail,ou=Special Users,$LDAP_SUFFIX"
 LDAP_PASSWORD="asdf"

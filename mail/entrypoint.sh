@@ -1,10 +1,9 @@
-#!/bin/dumb-init /bin/sh
+#!/bin/sh
 
 # Start rsyslog to collect postfix & dovecot logs and print them to stdout
 rsyslogd -n -f /etc/rsyslog.conf &
+SYSLOG_PID=$?
 
-# Setup consul dns resolution
-setup-consul-dns
 # Setup postfix+dovecot+ldap configuration
 setup-mail || exit 1
 
@@ -14,8 +13,7 @@ startConsulClient() {
 }
 
 startPostfix() {
-	/usr/sbin/postfix -c /etc/postfix start >/dev/null 2>&1
-#	echo $? > /var/run/postfix
+	/usr/sbin/postfix -c /etc/postfix start
 }
 
 #stopPostfix() {
@@ -24,23 +22,46 @@ startPostfix() {
 
 startDovecot() {
 	DOVECOT_CONF=/etc/dovecot/dovecot.conf
-	DOVECOT_BASEDIR=$(/usr/sbin/dovecot -c $DOVECOT_CONF -a | grep '^base_dir = ' | sed 's/^base_dir = //')
+	DOVECOT_BASEDIR=$(/usr/sbin/dovecot -c $DOVECOT_CONF -a | grep '^base_dir = ' | sed 's/^base_dir = //') &&
 	mkdir -p "$DOVECOT_BASEDIR" && chown dovecot:dovecot "$DOVECOT_BASEDIR" && chmod 0755 "$DOVECOT_BASEDIR" &&
 	/usr/sbin/dovecot -c "$DOVECOT_CONF"
-#	tail -f /var/log/dovecot.info &
-#	tail -f /var/log/dovecot &
 }
 
 #stopDovecot() {
 #	kill $($(/usr/sbin/dovecot -c $DOVECOT_CONF -a | grep '^base_dir = ' | sed 's/^base_dir = //')/master.pid)
 #}
 
+postfixPid() {
+	cat /var/spool/postfix/pid/master.pid
+}
+
+dovecotPid() {
+	echo $(/usr/sbin/dovecot -c $DOVECOT_CONF -a | grep '^base_dir = ' | sed 's/^base_dir = //')/master.pid
+}
+
+awaitTermination() {
+	while [ $(ps -ef | grep -Ec "^\s*$1 ") -ne 0 ]; do
+		sleep 1
+	done
+}
+
+terminate() {
+	echo 'Terminating ...'
+	kill $(postfixPid) || echo "Couldn't terminate postfix since it is not running" >&2
+	kill $(dovecotPid) || echo "Couldn't terminate dovecot since it is not running" >&2
+	awaitTermination $(postfixPid)
+	awaitTermination $(dovecotPid)
+	kill $SYSLOG_PID
+}
+
+# TODO: FIX. DOESN'T WORK
+trap terminate USR1 USR2 TERM QUIT # Register termination signal handler
+
 if [ "$1" = 'run' ]; then
-	startConsulClient
 	startPostfix
 	startDovecot
 	wait
-
+	echo "Terminated"
 elif [ "$1" = 'receivers' ]; then
 	grep -E 'to=<.*?>' /var/log/maillog* | grep -v 'NOQUEUE: reject:' | grep -Po '(?<=to=\<)[^>]+' | sort | uniq
 else
