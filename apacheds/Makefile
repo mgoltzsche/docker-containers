@@ -9,14 +9,15 @@ build:
 run:
 	# Run apacheds container
 	docker run -h auth.algorythm.de algorythm/apacheds:latest
+#	docker run -h auth.algorythm.de --security-opt seccomp:unconfined algorythm/apacheds:latest
 
 logs:
 	# Show log of running container
 	docker logs `docker ps | grep apacheds | cut -d ' ' -f 1`
 
-bash:
+sh:
 	# Run bash in container interactively
-	docker run -it -p 10389:10389 algorythm/apacheds:latest bash
+	docker run -it -p 10389:10389 -h auth.algorythm.de algorythm/apacheds:latest /bin/bash
 
 join:
 	# Execute interactive bash on running container

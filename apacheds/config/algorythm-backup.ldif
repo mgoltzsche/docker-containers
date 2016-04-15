@@ -1,0 +1,402 @@
+version: 1
+
+# entry-id: 1
+dn: dc=algorythm,dc=de
+nsUniqueId: a9bd7323-728c11e3-81e8ad88-5f75bb82
+objectClass: top
+objectClass: domain
+dc: algorythm
+aci: (targetattr!="userPassword")(version 3.0; acl "Enable anonymous access"; 
+ allow (read, search, compare) userdn="ldap:///anyone";)
+aci: (targetattr="carLicense || description || displayName || facsimileTelepho
+ neNumber || homePhone || homePostalAddress || initials || jpegPhoto || labele
+ dURI || mail || mobile || pager || photo || postOfficeBox || postalAddress ||
+  postalCode || preferredDeliveryMethod || preferredLanguage || registeredAddr
+ ess || roomNumber || secretary || seeAlso || st || street || telephoneNumber 
+ || telexNumber || title || userCertificate || userPassword || userSMIMECertif
+ icate || x500UniqueIdentifier")(version 3.0; acl "Enable self write for commo
+ n attributes"; allow (write) userdn="ldap:///self";)
+aci: (targetattr ="*")(version 3.0;acl "Directory Administrators Group";allow 
+ (all) (groupdn = "ldap:///cn=Directory Administrators, dc=algorythm,dc=de");)
+creatorsName:
+modifiersName:
+createTimestamp: 20140101023022Z
+modifyTimestamp: 20140101023022Z
+
+# entry-id: 2
+dn: cn=Directory Administrators,dc=algorythm,dc=de
+nsUniqueId: a9bd7324-728c11e3-81e8ad88-5f75bb82
+objectClass: top
+objectClass: groupofuniquenames
+cn: Directory Administrators
+creatorsName:
+modifiersName: cn=dirmanager
+createTimestamp: 20140101023022Z
+modifyTimestamp: 20140128012844Z
+uniqueMember: cn=liferay_default,ou=Special Users,dc=algorythm,dc=de
+uniqueMember: cn=max,ou=People,dc=algorythm,dc=de
+
+# entry-id: 3
+dn: ou=Groups,dc=algorythm,dc=de
+nsUniqueId: a9bd7325-728c11e3-81e8ad88-5f75bb82
+objectClass: top
+objectClass: organizationalunit
+ou: Groups
+creatorsName:
+modifiersName:
+createTimestamp: 20140101023022Z
+modifyTimestamp: 20140101023022Z
+
+# entry-id: 4
+dn: ou=People,dc=algorythm,dc=de
+nsUniqueId: a9bd7326-728c11e3-81e8ad88-5f75bb82
+objectClass: top
+objectClass: organizationalunit
+ou: People
+aci: (targetattr ="userpassword || telephonenumber || facsimiletelephonenumber
+ ")(version 3.0;acl "Allow self entry modification";allow (write)(userdn = "ld
+ ap:///self");)
+aci: (targetattr !="cn || sn || uid")(targetfilter ="(ou=Accounting)")(version
+  3.0;acl "Accounting Managers Group Permissions";allow (write)(groupdn = "lda
+ p:///cn=Accounting Managers,ou=groups,dc=algorythm,dc=de");)
+aci: (targetattr !="cn || sn || uid")(targetfilter ="(ou=Human Resources)")(ve
+ rsion 3.0;acl "HR Group Permissions";allow (write)(groupdn = "ldap:///cn=HR M
+ anagers,ou=groups,dc=algorythm,dc=de");)
+aci: (targetattr !="cn ||sn || uid")(targetfilter ="(ou=Product Testing)")(ver
+ sion 3.0;acl "QA Group Permissions";allow (write)(groupdn = "ldap:///cn=QA Ma
+ nagers,ou=groups,dc=algorythm,dc=de");)
+aci: (targetattr !="cn || sn || uid")(targetfilter ="(ou=Product Development)"
+ )(version 3.0;acl "Engineering Group Permissions";allow (write)(groupdn = "ld
+ ap:///cn=PD Managers,ou=groups,dc=algorythm,dc=de");)
+creatorsName:
+modifiersName:
+createTimestamp: 20140101023022Z
+modifyTimestamp: 20140101023022Z
+
+# entry-id: 5
+dn: ou=Special Users,dc=algorythm,dc=de
+nsUniqueId: a9bd7327-728c11e3-81e8ad88-5f75bb82
+objectClass: top
+objectClass: organizationalUnit
+ou: Special Users
+description: Special Administrative Accounts
+creatorsName:
+modifiersName:
+createTimestamp: 20140101023022Z
+modifyTimestamp: 20140101023022Z
+
+# entry-id: 6
+dn: cn=Accounting Managers,ou=Groups,dc=algorythm,dc=de
+nsUniqueId: a9bd7328-728c11e3-81e8ad88-5f75bb82
+objectClass: top
+objectClass: groupOfUniqueNames
+cn: Accounting Managers
+ou: groups
+description: People who can manage accounting entries
+uniqueMember: cn=dirmanager
+creatorsName:
+modifiersName:
+createTimestamp: 20140101023022Z
+modifyTimestamp: 20140101023022Z
+
+# entry-id: 7
+dn: cn=HR Managers,ou=Groups,dc=algorythm,dc=de
+nsUniqueId: a9bd7329-728c11e3-81e8ad88-5f75bb82
+objectClass: top
+objectClass: groupOfUniqueNames
+cn: HR Managers
+ou: groups
+description: People who can manage HR entries
+uniqueMember: cn=dirmanager
+creatorsName:
+modifiersName:
+createTimestamp: 20140101023022Z
+modifyTimestamp: 20140101023022Z
+
+# entry-id: 8
+dn: cn=QA Managers,ou=Groups,dc=algorythm,dc=de
+nsUniqueId: a9bd732a-728c11e3-81e8ad88-5f75bb82
+objectClass: top
+objectClass: groupOfUniqueNames
+cn: QA Managers
+ou: groups
+description: People who can manage QA entries
+uniqueMember: cn=dirmanager
+creatorsName:
+modifiersName:
+createTimestamp: 20140101023022Z
+modifyTimestamp: 20140101023022Z
+
+# entry-id: 9
+dn: cn=PD Managers,ou=Groups,dc=algorythm,dc=de
+nsUniqueId: a9bd732b-728c11e3-81e8ad88-5f75bb82
+objectClass: top
+objectClass: groupOfUniqueNames
+cn: PD Managers
+ou: groups
+description: People who can manage engineer entries
+uniqueMember: cn=dirmanager
+creatorsName:
+modifiersName:
+createTimestamp: 20140101023022Z
+modifyTimestamp: 20140101023022Z
+
+# entry-id: 10
+dn: ou=Domains,dc=algorythm,dc=de
+nsUniqueId: ab873687-728c11e3-9279d017-98038ee6
+objectClass: organizationalUnit
+objectClass: top
+ou: Domains
+creatorsName: cn=dirmanager
+modifiersName: cn=dirmanager
+createTimestamp: 20140101023028Z
+modifyTimestamp: 20140101023028Z
+
+# entry-id: 11
+dn: ou=algorythm.de,ou=Domains,dc=algorythm,dc=de
+nsUniqueId: ab873688-728c11e3-9279d017-98038ee6
+objectClass: domainRelatedObject
+objectClass: organizationalUnit
+objectClass: top
+ou: algorythm.de
+associatedDomain: algorythm.de
+creatorsName: cn=dirmanager
+modifiersName: cn=dirmanager
+createTimestamp: 20140101023029Z
+modifyTimestamp: 20140101023029Z
+
+# entry-id: 12
+dn: cn=max,ou=People,dc=algorythm,dc=de
+nsUniqueId: ab873689-728c11e3-9279d017-98038ee6
+objectClass: simpleSecurityObject
+objectClass: top
+objectClass: person
+objectClass: organizationalPerson
+objectClass: inetOrgPerson
+objectClass: mailRecipient
+cn: max
+sn: Goltzsche
+givenName: Max
+mail: max.goltzsche@algorythm.de
+userPassword:: e3NzaGE1MTJ9SWNjY3ZDNnp6YzAxL1JPd015QW8wVHhhbmhWRUg2eGw5a0t2b2s
+ xV1FlM0xCaWUwUTYxbWlPMlJoaFpYRDVIQnJ3RDh6c1ZtUno2NXVONVlnbFJmR3JpZVA5bkkwa01O
+creatorsName: cn=dirmanager
+modifiersName: cn=dirmanager
+createTimestamp: 20140101023029Z
+modifyTimestamp: 20150523181338Z
+mailAlternateAddress: info@algorythm.de
+mailAlternateAddress: max@algorythm.de
+passwordGraceUserTime: 0
+
+# entry-id: 13
+dn: cn=vmail,ou=Special Users,dc=algorythm,dc=de
+nsUniqueId: ab87368a-728c11e3-9279d017-98038ee6
+objectClass: applicationProcess
+objectClass: simpleSecurityObject
+objectClass: top
+objectClass: inetOrgPerson
+objectClass: organizationalPerson
+objectClass: person
+cn: vmail
+description: Mail server
+userPassword:: e3NzaGE1MTJ9YXlLRFF6dUJ1Z3BRMkRPYmFoYkJFKzdVaytLT2ZiUUZZTkh1MER
+ 3eUcvT0s0a3ZuQ0NvMlp1NEw1QzQ5ZnYzMTVzb2pHblZwN3hWS1pUakR0WWxFK3psMU1HMW5iRFkx
+creatorsName: cn=dirmanager
+modifiersName: cn=dirmanager
+createTimestamp: 20140101023029Z
+modifyTimestamp: 20160330173456Z
+sn: Virtual mail user
+
+# entry-id: 14
+dn: cn=liferay_default,ou=Special Users,dc=algorythm,dc=de
+nsUniqueId: ab87368b-728c11e3-9279d017-98038ee6
+objectClass: simpleSecurityObject
+objectClass: top
+objectClass: mailRecipient
+objectClass: applicationProcess
+objectClass: inetOrgPerson
+objectClass: organizationalPerson
+objectClass: person
+cn: liferay_default
+mail: system@algorythm.de
+mailForwardingAddress: max.goltzsche@algorythm.de
+userPassword:: e3NzaGE1MTJ9SVhyUC92WktPVC85VThXN2hkK3U4d1lITmlrK0NubW8wOVQ4VE5
+ lOHg2NXBPdXU2dHFicUpxNi9iV2piVFRUTzJlV0U2UWREVHZlVUNhNDVEL3ZaY25nMGJUSjNaalZ5
+creatorsName: cn=dirmanager
+modifiersName: cn=dirmanager
+createTimestamp: 20140101023043Z
+modifyTimestamp: 20160330173136Z
+sn: algorythm Liferay
+
+# entry-id: 15
+dn: cn=liferay_dieter_goltzsche,ou=Special Users,dc=algorythm,dc=de
+nsUniqueId: ab87368c-728c11e3-9279d017-98038ee6
+objectClass: simpleSecurityObject
+objectClass: top
+objectClass: mailRecipient
+objectClass: applicationProcess
+objectClass: inetOrgPerson
+objectClass: organizationalPerson
+objectClass: person
+cn: liferay_dieter_goltzsche
+mail: system@dieter-goltzsche.de
+mailForwardingAddress: max.goltzsche@algorythm.de
+userPassword:: e3NzaGE1MTJ9aVorTjdwQmxPZEVTR2FrUjNSVzh3UlZ3YXRjRjVWcnhOSDRKNEx
+ BaXdEZWthMU1QSHpEejlsUzI2VEJTK1A0SUNnT3pkd0xMVUJxcVR6TnVIenhJTW5obWNIa3hjV28x
+creatorsName: cn=dirmanager
+modifiersName: cn=dirmanager
+createTimestamp: 20140101023119Z
+modifyTimestamp: 20160330173230Z
+sn: Dieter Goltzsche Liferay
+
+# entry-id: 16
+dn: cn=nexus,ou=Special Users,dc=algorythm,dc=de
+nsUniqueId: ab87368d-728c11e3-9279d017-98038ee6
+objectClass: simpleSecurityObject
+objectClass: top
+objectClass: mailRecipient
+objectClass: applicationProcess
+objectClass: inetOrgPerson
+objectClass: organizationalPerson
+objectClass: person
+cn: nexus
+mail: system@repository.algorythm.de
+mailForwardingAddress: max.goltzsche@algorythm.de
+userPassword:: e3NzaGE1MTJ9ZkxQQ09Mb0JjTU9HcHAzVjEwRlFoelliRHhvZ0krblpmYWpCNFZ
+ HUUJiR1pwTWNWZ2VoekNXeURmMko2a1htb0hnTkg2NDVmYWdqWVdkWmlSbFI0LzJ0bGVYQmlOWGRw
+creatorsName: cn=dirmanager
+modifiersName: cn=dirmanager
+createTimestamp: 20140101023120Z
+modifyTimestamp: 20160330173256Z
+sn: Nexus Maven Repositories
+
+# entry-id: 17
+dn: ou=repository.algorythm.de,ou=Domains,dc=algorythm,dc=de
+nsUniqueId: ab87368e-728c11e3-9279d017-98038ee6
+objectClass: top
+objectClass: organizationalUnit
+objectClass: domainRelatedObject
+ou: repository.algorythm.de
+associatedDomain: repository.algorythm.de
+creatorsName: cn=dirmanager
+modifiersName: cn=dirmanager
+createTimestamp: 20140101023122Z
+modifyTimestamp: 20140101023122Z
+
+# entry-id: 18
+dn: cn=nx-admin,ou=Groups,dc=algorythm,dc=de
+nsUniqueId: ab87368f-728c11e3-9279d017-98038ee6
+objectClass: top
+objectClass: groupOfUniqueNames
+cn: nx-admin
+ou: groups
+description: Nexus role
+uniqueMember: cn=max,ou=people,dc=algorythm,dc=de
+creatorsName: cn=dirmanager
+modifiersName: cn=dirmanager
+createTimestamp: 20140101023122Z
+modifyTimestamp: 20140101023122Z
+
+# entry-id: 19
+dn: cn=developer-snapshots,ou=Groups,dc=algorythm,dc=de
+nsUniqueId: ab873690-728c11e3-9279d017-98038ee6
+objectClass: top
+objectClass: groupOfUniqueNames
+cn: developer-snapshots
+ou: groups
+description: Nexus role
+uniqueMember: cn=max,ou=people,dc=algorythm,dc=de
+creatorsName: cn=dirmanager
+modifiersName: cn=dirmanager
+createTimestamp: 20140101023122Z
+modifyTimestamp: 20140101023122Z
+
+# entry-id: 20
+dn: cn=repository-any-full,ou=Groups,dc=algorythm,dc=de
+nsUniqueId: ab873691-728c11e3-9279d017-98038ee6
+objectClass: top
+objectClass: groupOfUniqueNames
+ou: groups
+description: Nexus role
+uniqueMember: cn=max,ou=people,dc=algorythm,dc=de
+creatorsName: cn=dirmanager
+modifiersName: cn=dirmanager
+createTimestamp: 20140101023122Z
+modifyTimestamp: 20150530162529Z
+cn: repository-any-full
+
+# entry-id: 21
+dn: cn=redmine,ou=Special Users,dc=algorythm,dc=de
+nsUniqueId: ceb1e601-728c11e3-9279d017-98038ee6
+objectClass: applicationProcess
+objectClass: simpleSecurityObject
+objectClass: top
+objectClass: mailRecipient
+objectClass: inetOrgPerson
+objectClass: organizationalPerson
+objectClass: person
+cn: redmine
+description: Redmine Project Management System
+mail: system@redmine.algorythm.de
+mailForwardingAddress: max.goltzsche@algorythm.de
+userPassword:: e3NzaGE1MTJ9WFVPUTVoYnozVEJYeUpqNUpnU2UxQkFJZlc3a3phUEhYd0ZTMVE
+ 1Q0I3TzhIazZXN3RXTGRDdk9keTR3eHpRdm1xVXN0RUw1bE9kTDNvM3d6QzV0TG1Ka05uTTRaRGMw
+creatorsName: cn=dirmanager
+modifiersName: cn=dirmanager
+createTimestamp: 20140101023150Z
+modifyTimestamp: 20160330173419Z
+sn: Redmine project management system
+
+# entry-id: 22
+dn: ou=redmine.algorythm.de,ou=Domains,dc=algorythm,dc=de
+nsUniqueId: ceb1e602-728c11e3-9279d017-98038ee6
+objectClass: top
+objectClass: organizationalUnit
+objectClass: domainRelatedObject
+ou: redmine.algorythm.de
+associatedDomain: redmine.algorythm.de
+creatorsName: cn=dirmanager
+modifiersName: cn=dirmanager
+createTimestamp: 20140101023150Z
+modifyTimestamp: 20140101023150Z
+
+# entry-id: 23
+dn: cn=sigridwalther,ou=People,dc=algorythm,dc=de
+nsUniqueId: fc019281-729211e3-9279d017-98038ee6
+mail: sigridwalther@t-online.de
+sn: Walther-Goltzsche
+cn: sigridwalther
+givenName: Sigrid
+objectClass: simpleSecurityObject
+objectClass: top
+objectClass: person
+objectClass: organizationalPerson
+objectClass: inetOrgPerson
+objectClass: mailRecipient
+userPassword:: e3NzaGE1MTJ9UlBhczBnU1VXTXhFV1JEYVBOK0hVNVIwM3FWbEVwQTAvbXJwTi9
+ QQ0pGMDgwQTVscnFibTVFc0lEVWFwVUt5VGlvbXk1Y2lEUFVjN1g4V2I5TFJLWkNPUENOeUptWFox
+creatorsName: cn=dirmanager
+modifiersName: cn=dirmanager
+createTimestamp: 20140101031602Z
+modifyTimestamp: 20160330171729Z
+passwordGraceUserTime: 0
+
+# entry-id: 24
+dn: cn=nginx,ou=Special Users,dc=algorythm,dc=de
+objectClass: applicationProcess
+objectClass: simpleSecurityObject
+objectClass: top
+objectClass: inetOrgPerson
+objectClass: organizationalPerson
+objectClass: person
+cn: nginx
+description: Nginx webserver
+userPassword:: e3NzaGE1MTJ9YzRMT2pzbmZIMEVadTZTcHVhSHZhMDJGVG1xNVA3dVlaWWZDMVJ
+ FM1lhSUdYbzNCSE9DcnU3QWxucjF4L29QeHQ1Q2lyMVRSZnBucEtjNHZpa3hwYVhsc05IQnFjek55
+creatorsName: cn=dirmanager
+modifiersName: cn=dirmanager
+createTimestamp: 20160229210743Z
+modifyTimestamp: 20160330173321Z
+nsUniqueId: 6290a281-df2811e5-9f84fcd3-15b31710
+sn: Nginx webserver
+

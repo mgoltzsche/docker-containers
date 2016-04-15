@@ -1,6 +1,6 @@
-#!/bin/bash
+#!/bin/sh
 
-if [[ $EUID -ne 0 ]]; then
+if [[ "$(id -u)" -ne 0 ]]; then
    echo "Only root can reset directory admin password" 1>&2
    exit 1
 fi
