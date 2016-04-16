@@ -63,5 +63,6 @@ RUN chmod 544 /entrypoint.sh \
 
 EXPOSE 10389 10636
 
+WORKDIR /apacheds
 ENTRYPOINT ["tini", "-g", "--", "/entrypoint.sh"]
 CMD ["run"]

@@ -11,11 +11,9 @@ LDAP_OPTS="-x -h localhost -p 10389 -D uid=admin,ou=system -w $(cat /etc/apached
 #      - CAP_NET_BIND_SERVICE
 
 # Setup apacheds instance
-/apacheds/bin/setup-instance.sh $LDAP_DOMAIN || exit 1
+/apacheds/bin/setup-instance.sh "$LDAP_DOMAIN" || exit 1
 
 if [ "$1" = 'run' ]; then
-	#/entrypoint-consul.sh client -retry-join=consul &
-	cd /apacheds &&
 	gosu apacheds /apacheds/bin/apacheds.sh run
 	# Wait for ApacheDS to start
 	#while [ $(netstat -tpln | grep -c :10389) -eq 0 ]; do
@@ -25,10 +23,8 @@ if [ "$1" = 'run' ]; then
 	# Wait for ApacheDS and consul to terminate
 	#wait
 elif [ "$1" = 'start' ]; then
-	cd /apacheds &&
 	gosu apacheds /apacheds/bin/apacheds.sh start
 elif [ "$1" = 'stop' ]; then
-	cd /apacheds &&
 	gosu apacheds /apacheds/bin/apacheds.sh stop
 elif [ "$1" = 'modify' ]; then
 	if [ ! -f "$2" ]; then
