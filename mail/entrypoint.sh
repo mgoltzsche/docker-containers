@@ -29,7 +29,7 @@ awaitTermination() {
 
 terminate() {
 	# Terminate
-	trap : 1 2 3 15 # Disable termination call on signal to avoid infinite recursion
+	trap : SIGHUP SIGINT SIGQUIT SIGTERM # Disable termination call on signal to avoid infinite recursion
 	POSTFIX_PID=$(cat /var/spool/postfix/pid/master.pid 2>/dev/null)
 	DOVECOT_PID=$(cat $(/usr/sbin/dovecot -c $DOVECOT_CONF -a | grep '^base_dir = ' | sed 's/^base_dir = //')master.pid 2>/dev/null)
 	kill $POSTFIX_PID 2>/dev/null || echo "Couldn't terminate postfix since it is not running" >&2
@@ -41,8 +41,8 @@ terminate() {
 	exit 0
 }
 
-# Register signal handler for graceful termination (SIGHUP SIGINT SIGQUIT SIGTERM)
-trap terminate 1 2 3 15
+# Register signal handler for graceful termination
+trap terminate SIGHUP SIGINT SIGQUIT SIGTERM
 
 if [ "$1" = 'run' ]; then
 	startPostfix
