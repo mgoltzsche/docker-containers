@@ -76,5 +76,5 @@ ENV SERVICE_110_CHECK_INTERVAL 15s
 # Configure entrypoint
 ADD entrypoint.sh /
 RUN chmod 544 /entrypoint.sh /sbin/setup-mail
-ENTRYPOINT ["tini", "-g", "--", "/entrypoint.sh"]
+ENTRYPOINT ["tini", "--", "/entrypoint.sh"]
 CMD ["run"]
