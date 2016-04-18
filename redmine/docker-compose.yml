@@ -1,0 +1,16 @@
+version: '2'
+services:
+  postgres:
+    image: postgres:latest
+    hostname: postgres
+    ports:
+     - "389:10389"
+  redmine:
+    image: redmine:latest
+    hostname: mail.algorythm.de
+    ports:
+     - "3000:3000"
+    depends_on:
+     - postgres
+    links:
+     - postgres
