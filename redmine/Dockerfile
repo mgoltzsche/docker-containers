@@ -1,4 +1,5 @@
-FROM ruby:2.3.0-alpine
+# Ruby 2.2 is the latest version supported by Redmine 2.6.9
+FROM ruby:2.2-alpine
 MAINTAINER "Max Goltzsche" <max.goltzsche@algorythm.de>
 
 # Create redmine user and group
@@ -34,9 +35,8 @@ RUN set -x \
 	&& apk del --purge gnupg
 
 # Download and extract Redmine
-# Redmine 2.5.2 is the version running on algorythm.de. In docker container has same bug as 2.3.0
-# Redmine 2.6.9 is last version installable with Backlogs 1.0.6 because it requires nokogiri < 1.6.0 but Redmine 2.6.10 requires newer version. Backlog task board tasks can be created only if the workflow for the Task tracker is configured properly.
-# Redmine 2.3.0 also has the bug not beeing able to create tasks and has ActionView::Template::Error "undefined method name for nil:NilClass" on project creation. 2.5.2 also
+# Redmine 2.5.2 is the version running on algorythm.de.
+# Redmine 2.6.9 is last version running with Backlogs 1.0.6 because it requires nokogiri < 1.6.0 but Redmine 2.6.10 requires newer version. Backlog task board tasks can be created only if the workflow for the Task tracker is configured properly.
 ENV REDMINE_VERSION 2.6.9
 ENV RAILS_ENV production
 ENV REDMINE_LANG en
@@ -91,4 +91,4 @@ ADD entrypoint.sh /
 RUN chmod 544 /entrypoint.sh
 
 ENTRYPOINT ["tini", "--", "/entrypoint.sh"]
-CMD ["thin", "start"]
+CMD ["thin", "start"] # Start thin with three processes by default
