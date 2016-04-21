@@ -1,7 +1,7 @@
 #!/bin/sh
 
 case "$1" in rails|thin|rake)
-	# Configure DB connection if not mounted as volume
+	# Write database.yml if missing
 	if [ ! -f './config/database.yml' ]; then
 		if [ "$POSTGRES_PORT_5432_TCP" ]; then
 			# Configure postgres if defined
@@ -37,6 +37,25 @@ case "$1" in rails|thin|rake)
 		YML
 	fi
 
+	# Write configuration.yml if missing
+	if [ ! -f './config/configuration.yml' ]; then
+		cat > './config/configuration.yml' <<-YML
+			$RAILS_ENV:
+			  attachments_storage_path: /redmine/files
+			  email_delivery:
+			    delivery_method: :smtp
+			    smtp_settings:
+			      address: "${SMTP_HOST:-mail}"
+			      port: ${SMTP_PORT:-25}
+			      domain: "${SMTP_DOMAIN:-example.org}"
+			      authentication: :plain
+			      user_name: "${SMTP_USER:-redmine}"
+			      password: "${SMTP_PASSWORD:-redmine}"
+			      tls: ${SMTP_TLS:-false}
+			      enable_starttls_auto: ${SMTP_STARTTLS:-false}
+		YML
+	fi
+
 	# Ensure the right database adapter is active in Gemfile.lock
 	bundle install --without development test || exit 1
 
@@ -55,28 +74,34 @@ case "$1" in rails|thin|rake)
 	# Migrate DB
 	if [ "$1" != 'rake' -a -z "$REDMINE_NO_DB_MIGRATE" ]; then
 		echo "Migrating database. Avoid this by setting REDMINE_NO_DB_MIGRATE=true" >&2
-		gosu redmine rake db:migrate &&
-		gosu redmine rake redmine:plugins:migrate || exit 3
+		gosu redmine rake db:migrate || exit 3
 	fi
 
-	# Insert default configuration data when unconfigured
-	if [ -z $(echo "SELECT * FROM trackers;" | rails db -p) ] && [ -z "$REDMINE_NO_DEFAULT_DATA" ]; then
+	# Insert Redmine default configuration
+	if [ -z $(echo 'SELECT * FROM trackers;' | rails db -p) ] && [ -z "$REDMINE_NO_DEFAULT_DATA" ]; then
 		echo "Inserting default configuration data. Avoid this by setting REDMINE_NO_DEFAULT_DATA=true" >&2
 		gosu redmine rake redmine:load_default_data &&
 		gosu redmine rake tmp:cache:clear &&
-		gosu redmine rake tmp:sessions:clear &&
+		gosu redmine rake tmp:sessions:clear ||
+		exit 4
+	fi
+
+	# Install or migrate Redmine Backlogs plugin
+	if [ -z $(echo "SELECT * FROM settings WHERE name='plugin_redmine_backlogs';" | rails db -p) ] && [ -z "$REDMINE_NO_DEFAULT_DATA" ]; then # Install
 		gosu redmine rake redmine:backlogs:install \
 			corruptiontest=true \
-			labels=true \
 			story_trackers=Feature \
-			task_tracker=Task ||
-		exit 4
+			task_tracker=Task \
+			labels=false ||
+		exit 5
 		echo "SELECT role_id,(SELECT id FROM trackers WHERE name='Task'),old_status_id,new_status_id FROM workflows WHERE type='WorkflowTransition' AND tracker_id=(SELECT id FROM trackers WHERE name='Feature');" | \
 			rails db --mode list 2>/dev/null | \
 			sed -e 's/\|/,/g' -e 's/$/);/' | \
 			xargs -n1 echo "INSERT INTO workflows(type,assignee,author,role_id,tracker_id,old_status_id,new_status_id) VALUES('WorkflowTransition','f','f'," | \
 			gosu redmine rails db -p ||
 		echo "Failed to copy 'Feature' tracker workflow to 'Task' tracker workflow. You may have to create the workflow yourself to be able to interact with a backlogs task board" >&2
+	elif [ -z "$REDMINE_NO_DB_MIGRATE" ]; then # Migrate
+		gosu redmine rake redmine:plugins:migrate || exit 6
 	fi
 
 	# TODO: Configure LDAP

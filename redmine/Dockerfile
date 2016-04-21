@@ -84,6 +84,17 @@ RUN NOKOGIRI_VERSION=$(cat /redmine/Gemfile /redmine/plugins/*/Gemfile 2>/dev/nu
 	&& apk del --purge $BUILD_DEPS \
 	&& chown -R redmine:redmine /redmine
 
+# Disable card labels
+RUN echo '--- {}' > plugins/redmine_backlogs/lib/labels/labels.yaml
+
+# Configure logging using stdout
+RUN for ENVIRONMENT in production development; do \
+		sed -i $'/RedmineApp::Application.configure/a \
+			config.logger = Logger.new(STDOUT)\\\n\
+			config.logger.level = Logger::INFO' \
+			config/environments/$ENVIRONMENT.rb; \
+	done
+
 VOLUME /redmine/files
 EXPOSE 3000
 
@@ -91,4 +102,5 @@ ADD entrypoint.sh /
 RUN chmod 544 /entrypoint.sh
 
 ENTRYPOINT ["tini", "--", "/entrypoint.sh"]
+# TODO: log to stdout
 CMD ["thin", "start"] # Start thin with three processes by default
