@@ -102,5 +102,4 @@ ADD entrypoint.sh /
 RUN chmod 544 /entrypoint.sh
 
 ENTRYPOINT ["tini", "--", "/entrypoint.sh"]
-# TODO: log to stdout
-CMD ["thin", "start"] # Start thin with three processes by default
+CMD ["thin", "start"]
