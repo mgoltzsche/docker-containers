@@ -1,6 +1,14 @@
 #!/bin/sh
 
-# Start rsyslog to collect postfix & dovecot logs and print them to stdout
+# Wait for syslog
+LOGSTASH_HOST=logstash
+LOGSTASH_PORT=5000
+until nc -vzw1 "$LOGSTASH_HOST" "$LOGSTASH_PORT" 2>/dev/null; do
+	echo "Waiting for $LOGSTASH_HOST:$LOGSTASH_PORT"
+	sleep 1
+done
+
+# Start rsyslog to collect postfix & dovecot logs and print them to stdout and send them to logstash
 rsyslogd -n -f /etc/rsyslog.conf &
 SYSLOG_PID=$!
 
@@ -27,7 +35,7 @@ awaitTermination() {
 	fi
 }
 
-terminate() {
+terminateGracefully() {
 	# Terminate
 	trap : SIGHUP SIGINT SIGQUIT SIGTERM # Disable termination call on signal to avoid infinite recursion
 	POSTFIX_PID=$(cat /var/spool/postfix/pid/master.pid 2>/dev/null)
@@ -41,8 +49,8 @@ terminate() {
 	exit 0
 }
 
-# Register signal handler for graceful termination
-trap terminate SIGHUP SIGINT SIGQUIT SIGTERM
+# Register signal handler for orderly shutdown
+trap terminateGracefully SIGHUP SIGINT SIGQUIT SIGTERM
 
 if [ "$1" = 'run' ]; then
 	startPostfix

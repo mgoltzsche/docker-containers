@@ -34,8 +34,7 @@ RUN set -x \
 RUN addgroup apacheds && adduser -S -G apacheds apacheds
 
 # Download and install apacheds
-RUN apk add --no-cache --update curl\
-	&& wget -O apacheds.tar.gz http://apache.openmirror.de/directory/apacheds/dist/$APACHEDS_VERSION/apacheds-$APACHEDS_VERSION.tar.gz \
+RUN wget -O apacheds.tar.gz http://apache.openmirror.de/directory/apacheds/dist/$APACHEDS_VERSION/apacheds-$APACHEDS_VERSION.tar.gz \
 	&& tar -xzf apacheds.tar.gz \
 	&& mv apacheds-$APACHEDS_VERSION /apacheds \
 	&& mkdir /apacheds/ldif \
@@ -44,8 +43,7 @@ RUN apk add --no-cache --update curl\
 	&& echo -n 'secret' > /etc/apachedspw \
 	&& chmod 400 /etc/apachedspw \
 	&& rm apacheds.tar.gz \
-	&& rm /apacheds/bin/*.bat \
-	&& apk del --purge curl
+	&& rm /apacheds/bin/*.bat
 
 # Install bash and openldap-clients
 RUN apk add --no-cache --update bash openldap-clients
