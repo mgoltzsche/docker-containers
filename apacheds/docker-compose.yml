@@ -1,0 +1,9 @@
+version: '2'
+services:
+  apacheds:
+    image: algorythm/apacheds:latest
+    hostname: auth.algorythm.de
+    cap_add:
+      - NET_BIND_SERVICE
+    ports:
+      - "389:10389" # LDAP port

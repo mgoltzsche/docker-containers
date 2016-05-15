@@ -1,0 +1,23 @@
+version: '2'
+services:
+  consul:
+    image: consul:v0.6.4
+    hostname: consul
+    command: "agent -server -bootstrap-expect 1 -ui"
+    ports:
+      - "8500:8500" # consul web UI & REST service
+      - "8400:8400" # consul RPC
+      - "53:8600/udp" # consul DNS
+    environment:
+      CONSUL_CLIENT_INTERFACE: eth0
+#    volumes:
+#      - "$PWD/data/consul:/consul/data"
+  registrator:
+    image: gliderlabs/registrator:v7
+    command: "consul://consul:8500"
+    volumes:
+      - "/var/run/docker.sock:/tmp/docker.sock"
+    depends_on:
+      - consul
+    links:
+      - consul

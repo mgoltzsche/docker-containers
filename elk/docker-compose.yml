@@ -1,18 +1,5 @@
 version: '2'
 services:
-  consul:
-    extends:
-      file: consul/docker-compose.yml
-      service: consul
-  registrator:
-    image: gliderlabs/registrator:v7
-    command: "consul://consul:8500"
-    volumes:
-      - "/var/run/docker.sock:/tmp/docker.sock"
-    depends_on:
-      - consul
-    links:
-      - consul
   elasticsearch:
     image: elasticsearch:5
     hostname: elasticsearch
@@ -57,20 +44,3 @@ services:
       - logstash
     links:
       - logstash
-  apacheds:
-    extends:
-      file: apacheds/docker-compose.yml
-      service: apacheds
-  mail:
-    image: algorythm/mail:latest
-    hostname: mail.algorythm.de
-    environment:
-      LOGSTASH_ENABLED: "true"
-    ports:
-      - "25:25"
-      - "465:465"
-      - "587:587"
-      - "110:110"
-      - "143:143"
-      - "993:993"
-      - "995:995"
