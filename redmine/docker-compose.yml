@@ -1,16 +1,23 @@
+# Runs Redmine Backlogs with PostgreSQL database
 version: '2'
 services:
   postgres:
-    image: postgres:latest
-    hostname: postgres
-    ports:
-     - "389:10389"
+    extends:
+      file: ../postgres/docker-compose.yml
+      service: postgres
+    environment:
+      POSTGRES_PASSWORD: "${POSTGRES_PASSWORD}"
+      PG_USER_REDMINE: "${REDMINE_POSTGRES_PASSWORD}"
   redmine:
-    image: redmine:latest
-    hostname: mail.algorythm.de
+    image: algorythm/redmine-backlogs:latest
+    hostname: redmine.algorythm.de
+    environment:
+      POSTGRES_PORT_5432_TCP: "true"
+      POSTGRES_ENV_POSTGRES_USER: redmine
+      POSTGRES_ENV_POSTGRES_PASSWORD: "${REDMINE_POSTGRES_PASSWORD}"
     ports:
-     - "3000:3000"
-    depends_on:
-     - postgres
-    links:
-     - postgres
+      - "3000:3000"
+#    depends_on:
+#      - postgres
+#    links:
+#      - postgres

@@ -6,7 +6,7 @@ services:
     environment:
       LOGSPOUT: ignore
     volumes:
-      - "$PWD/elasticsearch/elasticsearch.yml:/usr/share/elasticsearch/config/elasticsearch.yml"
+      - "$PWD/elasticsearch.yml:/usr/share/elasticsearch/config/elasticsearch.yml"
   logstash:
     image: logstash:5
     hostname: logstash

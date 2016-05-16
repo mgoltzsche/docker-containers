@@ -20,7 +20,7 @@ logs:
 
 sh:
 	# Run shell in container interactively
-	docker run -it -p 3000:3000 -h redmine algorythm/redmine-backlogs:latest /bin/sh
+	docker run -it -h redmine algorythm/redmine-backlogs:latest /bin/sh
 
 join:
 	# Execute interactive shell on running container

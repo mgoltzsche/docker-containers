@@ -2,7 +2,7 @@ version: '2'
 services:
   consul:
     extends:
-      file: consul/docker-compose.yml
+      file: common.consul.yml
       service: consul
   registrator:
     image: gliderlabs/registrator:v7
@@ -14,12 +14,9 @@ services:
     links:
       - consul
   elasticsearch:
-    image: elasticsearch:5
-    hostname: elasticsearch
-    environment:
-      LOGSPOUT: ignore
-    volumes:
-      - "$PWD/elasticsearch/elasticsearch.yml:/usr/share/elasticsearch/config/elasticsearch.yml"
+    extends:
+      file: common.elk.yml
+      service: elasticsearch
   logstash:
     image: logstash:5
     hostname: logstash
@@ -74,3 +71,18 @@ services:
       - "143:143"
       - "993:993"
       - "995:995"
+  postgres:
+    extends:
+      file: postgres/docker-compose.yml
+      service: postgres
+    environment:
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      PG_USER_REDMINE: "${REDMINE_POSTGRES_PASSWORD}"
+  redmine:
+    extends:
+      file: redmine/docker-compose.yml
+      service: redmine
+    depends_on:
+      - postgres
+    links:
+      - postgres

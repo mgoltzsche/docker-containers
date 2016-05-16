@@ -1,16 +1,26 @@
 #!/bin/sh
 
+# Wait for logstash service to become available
+if [ "$LOGSTASH_ENABLED" ]; then
+	LOGSTASH_HOST=logstash
+	LOGSTASH_PORT=5000
+	until nc -vzw1 "$LOGSTASH_HOST" "$LOGSTASH_PORT" 2>/dev/null; do
+		echo "Waiting for $LOGSTASH_HOST:$LOGSTASH_PORT"
+		sleep 1
+	done
+fi
+
 case "$1" in rails|thin|rake)
 	# Write database.yml if missing
 	if [ ! -f './config/database.yml' ]; then
 		if [ "$POSTGRES_PORT_5432_TCP" ]; then
-			# Configure postgres if defined
+			# Configure postgres
 			DB_ADAPTER='postgresql'
 			DB_HOST="${POSTGRES_PORT_5432_TCP_HOST:-postgres}"
 			DB_PORT="${POSTGRES_PORT_5432_TCP_PORT:-5432}"
 			DB_USERNAME="${POSTGRES_ENV_POSTGRES_USER:-postgres}"
 			DB_PASSWORD="${POSTGRES_ENV_POSTGRES_PASSWORD}"
-			DB_DATABASE="${POSTGRES_ENV_POSTGRES_DB:-$username}"
+			DB_DATABASE="${POSTGRES_ENV_POSTGRES_DB:-redmine}"
 			DB_ENCODING=utf8
 		else
 			# Configure sqlite as fallback
@@ -71,41 +81,48 @@ case "$1" in rails|thin|rake)
 		fi
 	fi
 
+	# Wait for DB to become available
+	until ERROR=$(echo "SELECT 1;" | gosu redmine rails db -p 2>&1); do
+		echo "Waiting for $DB_ADAPTER://$DB_USERNAME@$DB_HOST:$DB_PORT/$DB_DATABASE to become available: $ERROR"
+		sleep 1
+	done
+
 	# Migrate DB
 	if [ "$1" != 'rake' -a -z "$REDMINE_NO_DB_MIGRATE" ]; then
 		echo "Migrating database. Disable this by setting REDMINE_NO_DB_MIGRATE=true" >&2
-		gosu redmine rake db:migrate || exit 3
+		gosu redmine rake db:migrate || exit 4
 	fi
 
 	# Insert Redmine default configuration
-	if [ -z "$(echo 'SELECT * FROM trackers;' | rails db -p)" ] && [ -z "$REDMINE_NO_DEFAULT_DATA" ]; then
+	if echo "SELECT COUNT(*)||'trackers' FROM trackers;" | gosu redmine rails db -p | grep -qw '0trackers' && [ -z "$REDMINE_NO_DEFAULT_DATA" ]; then
 		echo "Inserting default configuration data. Disable this by setting REDMINE_NO_DEFAULT_DATA=true" >&2
 		gosu redmine rake redmine:load_default_data &&
 		gosu redmine rake tmp:cache:clear &&
 		gosu redmine rake tmp:sessions:clear ||
-		exit 4
+		exit 5
 	fi
 
 	# Install or migrate Redmine Backlogs plugin
-	if [ -z "$(echo "SELECT * FROM settings WHERE name='plugin_redmine_backlogs';" | rails db -p)" ] && [ -z "$REDMINE_NO_DEFAULT_DATA" ]; then # Install
+	if echo "SELECT COUNT(*)||'rbsettings' FROM settings WHERE name='plugin_redmine_backlogs';" | gosu redmine rails db -p | grep -qw '0rbsettings' && [ -z "$REDMINE_NO_DEFAULT_DATA" ]; then # Install
 		gosu redmine rake redmine:backlogs:install \
 			corruptiontest=true \
 			story_trackers=Feature \
 			task_tracker=Task \
 			labels=false ||
-		exit 5
-		echo "SELECT role_id,(SELECT id FROM trackers WHERE name='Task'),old_status_id,new_status_id FROM workflows WHERE type='WorkflowTransition' AND tracker_id=(SELECT id FROM trackers WHERE name='Feature');" | \
-			rails db -p --mode list | \
-			sed -e 's/\|/,/g' -e 's/$/);/' | \
-			xargs -n1 echo "INSERT INTO workflows(type,assignee,author,role_id,tracker_id,old_status_id,new_status_id) VALUES('WorkflowTransition','f','f'," | \
+		exit 6
+		WORKFLOW_SQL="SELECT (SELECT id FROM trackers WHERE name='Task'),role_id,old_status_id,new_status_id FROM workflows WHERE type='WorkflowTransition' AND tracker_id=(SELECT id FROM trackers WHERE name='Feature');"
+		# Cannot use rails db --mode list since output is not supported when postgresql adapter is used
+		echo "$WORKFLOW_SQL" | gosu redmine rails db -p | grep -Eo '\d+\s*\|\s*\d+\s*\|\s*\d+\s*\|\s*\d+' | \
+			sed -e 's/\|/,/g' -e 's/ //g' -e 's/$/);/' | \
+			xargs -n1 echo "INSERT INTO workflows(type,assignee,author,tracker_id,role_id,old_status_id,new_status_id) VALUES('WorkflowTransition','f','f'," | \
 			gosu redmine rails db -p ||
-		echo "Failed to copy 'Feature' tracker workflow to 'Task' tracker workflow. You may have to create the workflow yourself to be able to interact with a backlogs task board" >&2
+		(echo "Failed to copy 'Feature' tracker workflow to 'Task' tracker workflow. You may have to create the workflow yourself to be able to interact with a backlogs task board" >&2; exit 7)
 	elif [ -z "$REDMINE_NO_DB_MIGRATE" ]; then # Migrate
-		gosu redmine rake redmine:plugins:migrate || exit 6
+		gosu redmine rake redmine:plugins:migrate || exit 8
 	fi
 
 	# Configure host name
-	HOST_NAME="$(echo "SELECT value FROM settings WHERE name='host_name';" | rails db -p)"
+	HOST_NAME="$(echo "SELECT 'hostname:'||value FROM settings WHERE name='host_name';" | rails db -p | grep -E 'hostname:' | sed s/hostame://)"
 	if [ -z "$HOST_NAME" ]; then
 		HOST_NAME="${REDMINE_HOST_NAME:-$(hostname -f)}"
 		echo "Configuring Redmine host name $HOST_NAME since unconfigured instance"
@@ -113,10 +130,10 @@ case "$1" in rails|thin|rake)
 		if [ -z "$HOST_NAME" ]; then
 			echo "Could not configure Redmine host name." >&2
 			echo "Please set REDMINE_HOST_NAME or configure a fully qualified system host name with e.g. docker's -h option." >&2
-			exit 7
+			exit 9
 		fi
 
-		echo "INSERT INTO settings(name,value) VALUES('host_name','$HOST_NAME');" | rails db -p
+		echo "INSERT INTO settings(name,value) VALUES('host_name','$HOST_NAME');" | gosu redmine rails db -p
 	fi
 
 	# Configure LDAP
@@ -139,14 +156,14 @@ case "$1" in rails|thin|rake)
 		LDAP_TIMEOUT=${LDAP_TIMEOUT:-30}
 		set | grep -E '^LDAP_' | sed -E 's/(^[^=]+PASSWORD=).*/\1***/i' # Show variables
 
-		if [ -z "$(echo "SELECT * FROM auth_sources WHERE name='$LDAP_AUTH';" | rails db -p)" ]; then
+		if ! echo "SELECT 'auth:'||name FROM auth_sources WHERE name='$LDAP_AUTH';" | rails db -p | grep -qw "auth:$LDAP_AUTH"; then
 			echo "INSERT INTO auth_sources(type,name,host,port,account,account_password,base_dn,filter,attr_login,attr_mail,attr_firstname,attr_lastname,onthefly_register,tls,timeout)
 					VALUES('AuthSourceLdap','$LDAP_AUTH','$LDAP_HOST',$LDAP_PORT,
 						'$LDAP_ACCOUNT','$LDAP_ACCOUNT_PASSWORD','$LDAP_BASE_DN',
 						'$LDAP_FILTER','$LDAP_ATTR_LOGIN','$LDAP_ATTR_MAIL',
 						'$LDAP_ATTR_FIRSTNAME','$LDAP_ATTR_LASTNAME',
-						'$LDAP_ONTHEFLY_REGISTER','$LDAP_TLS',$LDAP_TIMEOUT);" | rails db -p ||
-				(echo "Failed to insert LDAP auth source $LDAP_AUTH"; exit 1)
+						'$LDAP_ONTHEFLY_REGISTER','$LDAP_TLS',$LDAP_TIMEOUT);" | gosu redmine rails db -p ||
+				(echo "Failed to insert LDAP auth source $LDAP_AUTH"; exit 10)
 		else
 			echo "UPDATE auth_sources SET type='AuthSourceLdap',
 					host='$LDAP_HOST',port=$LDAP_PORT,
@@ -160,8 +177,8 @@ case "$1" in rails|thin|rake)
 					attr_lastname='$LDAP_ATTR_LASTNAME',
 					onthefly_register='$LDAP_ONTHEFLYREGISTER',
 					tls='$LDAP_TLS',timeout=$LDAP_TIMEOUT
-					WHERE name='$LDAP_AUTH';" | rails db -p ||
-				(echo "Failed to update LDAP auth source $LDAP_AUTH_NAME"; exit 1)
+					WHERE name='$LDAP_AUTH';" | gosu redmine rails db -p ||
+				(echo "Failed to update LDAP auth source $LDAP_AUTH_NAME"; exit 11)
 		fi
 	fi
 
