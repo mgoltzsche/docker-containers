@@ -1,7 +1,0 @@
-version: '2'
-services:
-  postgres:
-    image: algorythm/postgres:latest
-    hostname: postgres
-    ports:
-      - "5432:5432"

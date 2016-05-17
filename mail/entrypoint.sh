@@ -11,6 +11,7 @@ if [ "$LOGSTASH_ENABLED" ]; then
 fi
 
 # Start rsyslog to collect postfix & dovecot logs and print them to stdout and send them to logstash
+SYSLOGD="-m ${SYSLOG_MARK_INTERVAL:-60}" # Set syslog -- Mark -- interval in minutes (useful for health check)
 rsyslogd -n -f /etc/rsyslog.conf &
 SYSLOG_PID=$!
 

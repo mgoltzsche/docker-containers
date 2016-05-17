@@ -2,54 +2,42 @@ version: '2'
 services:
   consul:
     extends:
-      file: common.consul.yml
+      file: common.yml
       service: consul
+#    volumes:
+#      - "./data/consul:/consul/data"
   registrator:
-    image: gliderlabs/registrator:v7
-    command: "consul://consul:8500"
-    volumes:
-      - "/var/run/docker.sock:/tmp/docker.sock"
+    extends:
+      file: common.yml
+      service: registrator
     depends_on:
       - consul
     links:
       - consul
   elasticsearch:
     extends:
-      file: common.elk.yml
+      file: common.yml
       service: elasticsearch
   logstash:
-    image: logstash:5
-    hostname: logstash
-    command: "./wait-for-tcp-port.sh elasticsearch 9200 logstash -f /config/logstash.conf"
-    environment:
-      LOGSPOUT: ignore
-    volumes:
-      - "$PWD/logstash:/config"
-      - "$PWD/scripts/wait-for-tcp-port.sh:/wait-for-tcp-port.sh"
+    extends:
+      file: common.yml
+      service: logstash
     depends_on:
       - elasticsearch
     links:
       - elasticsearch
   kibana:
-    image: kibana:5
-    command: "./wait-for-tcp-port.sh elasticsearch 9200 kibana -e http://elasticsearch:9200"
-    volumes:
-      - "$PWD/scripts/wait-for-tcp-port.sh:/wait-for-tcp-port.sh"
-    ports:
-      - "5601:5601" # Kibana web UI
-    environment:
-      LOGSPOUT: ignore
+    extends:
+      file: common.yml
+      service: kibana
     depends_on:
       - elasticsearch
     links:
       - elasticsearch
   logspout:
-    image: gliderlabs/logspout:v3
-    command: "syslog://logstash:5000"
-    volumes:
-      - "/var/run/docker.sock:/tmp/docker.sock"
-    environment:
-      LOGSPOUT: ignore
+    extends:
+      file: common.yml
+      service: logspout
     depends_on:
       - logstash
     links:
@@ -59,21 +47,14 @@ services:
       file: apacheds/docker-compose.yml
       service: apacheds
   mail:
-    image: algorythm/mail:latest
-    hostname: mail.algorythm.de
+    extends:
+      file: mail/docker-compose.yml
+      service: mail
     environment:
       LOGSTASH_ENABLED: "true"
-    ports:
-      - "25:25"
-      - "465:465"
-      - "587:587"
-      - "110:110"
-      - "143:143"
-      - "993:993"
-      - "995:995"
   postgres:
     extends:
-      file: postgres/docker-compose.yml
+      file: common.yml
       service: postgres
     environment:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}

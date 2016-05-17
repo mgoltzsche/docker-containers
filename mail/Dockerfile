@@ -3,6 +3,7 @@ MAINTAINER "Max Goltzsche" <max.goltzsche@algorythm.de>
 
 ENV DOMAIN algorythm.de
 ENV LDAP_SUFFIX dc=algorythm,dc=de
+ENV SYSLOG_MARK_INTERVAL 60
 # Health checks registered by registrator container
 #ENV SERVICE_25_CHECK_TCP true # supported since consul 0.6
 #ENV SERVICE_25_CHECK_INTERVAL 30s

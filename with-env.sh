@@ -8,6 +8,6 @@ fi
 
 ENV_TYPE="$1"
 
-export $(find . -name *.$ENV_TYPE.env | xargs cat | grep -E '^[^#=]+=.*')
+export $(find . -name "*.$ENV_TYPE.env" | xargs cat | grep -E '^[^#=]+=.*')
 shift
 docker-compose $@

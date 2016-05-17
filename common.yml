@@ -1,0 +1,80 @@
+version: '2'
+services:
+  # Consul service discovery + health check
+  consul:
+    image: consul:v0.6.4
+    hostname: consul
+    command: "agent -server -bootstrap-expect 1 -ui"
+    ports:
+      - "8500:8500" # consul web UI & REST service
+      - "8400:8400" # consul RPC
+      - "53:8600/udp" # consul DNS
+    environment:
+      CONSUL_CLIENT_INTERFACE: eth0
+#    volumes:
+#      - "./data/consul:/consul/data"
+  registrator:
+    image: gliderlabs/registrator:v7
+    command: "consul://consul:8500"
+    volumes:
+      - "/var/run/docker.sock:/tmp/docker.sock"
+    #depends_on:
+    #  - consul
+    #links:
+    #  - consul
+
+  # ELK stack
+  elasticsearch:
+    image: elasticsearch:5
+    hostname: elasticsearch
+    ports:
+      - "9200:9200"
+    environment:
+      LOGSPOUT: ignore
+    volumes:
+      - "./elasticsearch.yml:/usr/share/elasticsearch/config/elasticsearch.yml"
+  logstash:
+    image: logstash:5
+    hostname: logstash
+    command: "./wait-for-tcp-port.sh elasticsearch 9200 logstash -f /config/logstash.conf"
+    environment:
+      LOGSPOUT: ignore
+    volumes:
+      - "./logstash:/config"
+      - "./scripts/wait-for-tcp-port.sh:/wait-for-tcp-port.sh"
+    #depends_on:
+    #  - elasticsearch
+    #links:
+    #  - elasticsearch
+  kibana:
+    image: kibana:5
+    command: "./wait-for-tcp-port.sh elasticsearch 9200 kibana -e http://elasticsearch:9200"
+    volumes:
+      - "./scripts/wait-for-tcp-port.sh:/wait-for-tcp-port.sh"
+    ports:
+      - "5601:5601" # Kibana web UI
+    environment:
+      LOGSPOUT: ignore
+    #depends_on:
+    #  - elasticsearch
+    #links:
+    #  - elasticsearch
+  logspout:
+    image: gliderlabs/logspout:v3
+    command: "syslog://logstash:5000"
+    volumes:
+      - "/var/run/docker.sock:/tmp/docker.sock"
+    environment:
+      LOGSPOUT: ignore
+    #depends_on:
+    #  - logstash
+    #links:
+    #  - logstash
+
+  postgres:
+    image: postgres:9.5.2
+    hostname: postgres
+    ports:
+      - "5432:5432"
+    volumes:
+      - "./postgres-add-users-and-dbs.sh:/docker-entrypoint-initdb.d/add-users-and-dbs.sh"
