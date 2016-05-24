@@ -7,13 +7,16 @@ build:
 	docker build -t algorythm/389ds:1 --rm .
 
 run:
-	# Run apacheds container
-	docker run algorythm/389ds:1
-	# show container log
-#	docker logs 6acfc613c604
-	# execute command interactivly on running container
-#	docker exec -it consul /bin/bash
+	# Run container
+	docker run -h ldap.algorythm.de -p "389:389" algorythm/389ds:1
 
-bash:
-	# Run bash in container interactively
-	docker run -it algorythm/389ds:1 bash
+sh:
+	# Run shell in container interactively
+	docker run -h ldap.algorythm.de -it algorythm/389ds:1 bash
+
+join:
+	# Execute interactive bash on running container
+	docker exec -it `docker ps | grep apacheds | cut -d ' ' -f 1` /bin/bash
+
+kill:
+	docker kill `docker ps | grep 389ds | cut -d ' ' -f 1`

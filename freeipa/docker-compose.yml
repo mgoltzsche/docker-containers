@@ -1,0 +1,18 @@
+version: '2'
+services:
+  ipa:
+    image: adelton/freeipa-server:fedora-23
+    hostname: ipa.algorythm.de
+#    command: exit-on-finished
+    environment:
+      PASSWORD: Secret123
+#      SHOW_LOG: 1
+    ports:
+      - "8080:80"
+    cap_add:
+      - NET_ADMIN
+    volumes:
+      - "/sys/fs/cgroup:/sys/fs/cgroup:ro"
+      - "./ipa-data:/data:Z"
+# TODO: enable tty allocation in docker compose or derive image that awaits initial setup
+#docker run --name freeipa-server-container -t -h ipa.algorythm.de -e PASSWORD=secret -v /sys/fs/cgroup:/sys/fs/cgroup:ro -v ~/development/docker-containers/freeipa/ipa-data:/data:Z adelton/freeipa-server:fedora-23

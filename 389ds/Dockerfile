@@ -1,8 +1,8 @@
-FROM debian:jessie
+FROM centos:7
 MAINTAINER "Max Goltzsche" <max.goltzsche@algorythm.de>
-RUN apt-get update -q && \
-	apt-get upgrade -y
-RUN DEBIAN_FRONTEND='noninteractive' apt-get install -y 389-ds-base && \
-	apt-get clean && \
-	rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
-ADD config/entrypoint.sh /
+RUN yum -y update \
+	&& yum install -y 389-ds-base \
+	&& yum clean all
+ADD entrypoint.sh /
+ENTRYPOINT ["./entrypoint.sh"]
+CMD ["dirsrv"]
