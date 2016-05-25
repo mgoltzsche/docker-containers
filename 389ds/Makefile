@@ -16,7 +16,7 @@ sh:
 
 join:
 	# Execute interactive bash on running container
-	docker exec -it `docker ps | grep apacheds | cut -d ' ' -f 1` /bin/bash
+	docker exec -it `docker ps | grep algorythm/389ds | cut -d ' ' -f 1` /bin/bash
 
 kill:
 	docker kill `docker ps | grep 389ds | cut -d ' ' -f 1`

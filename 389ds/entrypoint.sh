@@ -60,18 +60,40 @@ InstallLdifFile= $LDAP_INSTALL_LDIF_FILE
 	rm -rf /tmp/ds-config.inf 2>/dev/null
 }
 
+awaitTermination() {
+	# Wait until process has been terminated
+	while [ ! -z "$1" ] && ps "$1" >/dev/null; do
+		sleep 1
+	done
+}
+
+terminateGracefully() {
+	echo "Terminating gracefully"
+	trap : SIGHUP SIGINT SIGQUIT SIGTERM # Disable termination call on signal to avoid infinite recursion
+	DIRSRV_PID=$(ps h -o pid -C ns-slapd)
+	kill $DIRSRV_PID 2>/dev/null || echo "Couldn't terminate 389 directory server since it is not running" >&2
+	awaitTermination $DIRSRV_PID
+	#kill $SYSLOG_PID
+	#awaitTermination $SYSLOG_PID
+	exit 0
+}
+
 case "$1" in
 	dirsrv)
+		mkdir -p "INSTANCE_LOG_DIR/{}"
+
 		if [ ! -d "$INSTANCE_DIR" ]; then
 			setupDirsrvInstance # Install if directory doesn't exist
 			sleep 3
 		fi
 
-		ns-slapd -D $INSTANCE_DIR &&
-		PID=$(ps h -o pid -C ns-slapd)
-		echo "LDAP server started with PID $PID"
-		tail -F $INSTANCE_LOG_DIR/{access,errors} --max-unchanged-stats=5
-		# TODO: server starts. now handle proper shutdown
+		shift
+		ns-slapd -D $INSTANCE_DIR $@ &&
+		echo "LDAP server started"
+		# TODO: handle proper logging: maybe try fedora image: if it contains newer version of 389ds it may be able to log to syslog as in http://directory.fedoraproject.org/docs/389ds/design/logging-multiple-backends.html
+		tail -f $INSTANCE_LOG_DIR/{access,errors} --max-unchanged-stats=5 &
+		trap terminateGracefully SIGHUP SIGINT SIGQUIT SIGTERM # Register signal handler for orderly shutdown
+		wait
 	;;
 	*)
 		exec "$@"
