@@ -12,7 +12,7 @@ run:
 
 cat:
 	# Run container
-	docker run -h ldap.algorythm.de -p "389:389" algorythm/389ds:latest ldap cat dc=algorythm,dc=de
+	docker run -h ldap.algorythm.de -p "389:389" algorythm/389ds:latest ldapsearch -b dc=algorythm,dc=de
 
 sh:
 	# Run shell in container interactively

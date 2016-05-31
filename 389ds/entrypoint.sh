@@ -98,7 +98,9 @@ case "$1" in
 
 		CMD="$1"
 		shift
-		ns-slapd -D "$INSTANCE_DIR" $@ || exit $?
+		SLAPD_ARGS=
+		if [ "$CMD" = ns-slapd ]; then SLAPD_ARGS=$@; fi
+		ns-slapd -D "$INSTANCE_DIR" $SLAPD_ARGS || exit $?
 
 		# TODO: handle proper logging: maybe try fedora image: if it contains newer version of 389ds it may be able to log to syslog as in http://directory.fedoraproject.org/docs/389ds/design/logging-multiple-backends.html
 		tail -f $INSTANCE_LOG_DIR/{access,errors} --max-unchanged-stats=5 &

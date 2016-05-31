@@ -20,7 +20,6 @@ EXPOSE 389
 
 VOLUME /var/lib/dirsrv
 
-ADD ldap-client.sh /bin/ldap
 ADD entrypoint.sh /
 #ENTRYPOINT ["tini", "--", "/entrypoint.sh"]
 ENTRYPOINT ["/entrypoint.sh"]
