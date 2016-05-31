@@ -1,0 +1,9 @@
+version: '2'
+services:
+  ldap:
+    image: algorythm/389ds:latest
+    hostname: ldap.algorythm.de
+    ports:
+      - "389:389"
+#    volumes:
+#      - "./data:/var/lib/dirsrv"
