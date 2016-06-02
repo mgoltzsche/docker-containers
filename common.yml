@@ -40,7 +40,7 @@ services:
     environment:
       LOGSPOUT: ignore
     volumes:
-      - "./logstash:/config"
+      - "./logstash.conf:/config/logstash.conf"
       - "./scripts/wait-for-tcp-port.sh:/wait-for-tcp-port.sh"
     #depends_on:
     #  - elasticsearch

@@ -4,8 +4,6 @@ if [ $# -lt 2 ]; then
 	exit 1
 fi
 
-CHECKCMD="timeout 1 bash -c 'cat < /dev/null > /dev/tcp/$1/$2'"
-
 while true; do
 	if nc -h 2>/dev/null >/dev/null; then
 		if nc -vzw1 "$1" "$2" 2>/dev/null; then

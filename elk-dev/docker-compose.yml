@@ -1,0 +1,22 @@
+version: '2'
+services:
+  elasticsearch:
+    extends:
+      file: ../common.yml
+      service: elasticsearch
+  logstash:
+    extends:
+      file: ../common.yml
+      service: logstash
+    depends_on:
+      - elasticsearch
+    links:
+      - elasticsearch
+  kibana:
+    extends:
+      file: ../common.yml
+      service: kibana
+    depends_on:
+      - elasticsearch
+    links:
+      - elasticsearch

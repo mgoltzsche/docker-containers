@@ -6,9 +6,7 @@ INSTANCE_DIR="/etc/dirsrv/slapd-$INSTANCE_ID"
 INSTANCE_LOG_DIR="/var/log/dirsrv/slapd-$INSTANCE_ID"
 
 setupDirsrvInstance() {
-	if [ -d "$INSTANCE_DIR" ]; then # Skip setup if already configured
-		return 0
-	fi
+	[ ! -d "$INSTANCE_DIR" ] || return 0 # Skip setup if already configured
 
 	set -e
 	: ${LDAP_INSTALL_INF_FILE:=/tmp/ds-config.inf}
@@ -21,6 +19,7 @@ setupDirsrvInstance() {
 	: ${LDAP_CONFIG_DIRECTORY_ADMIN_PWD:=$LDAP_ROOT_DN_PWD}
 	: ${LDAP_SUFFIX:=$LDAP_ADMIN_DOMAIN_SUFFIX}
 	: ${LDAP_INSTALL_LDIF_FILE:=suggest}
+	: ${LDAP_OPTS:=-x -h localhost -p "$LDAP_SERVER_PORT" -D "$LDAP_ROOT_DN" -w "$LDAP_ROOT_DN_PWD"}
 
 	if [ -f "$LDAP_INSTALL_INF_FILE" ]; then
 		echo "Installing LDAP server instance from configuration file $LDAP_INSTALL_INF_FILE"
@@ -62,7 +61,46 @@ InstallLdifFile= $LDAP_INSTALL_LDIF_FILE
 	# Install LDAP server with config file
 	setup-ds.pl -sdf "$LDAP_INSTALL_INF_FILE" || exit 3
 	rm -rf /tmp/ds-config.inf 2>/dev/null
-	awaitTermination $(slapdpid)
+}
+
+disableSlapdLogRotation() {
+	# Disables slapd log rotation (to use named pipe)
+	echo "Disabling log rotation"
+	until timeout 1 bash -c "</dev/tcp/localhost/$LDAP_SERVER_PORT" 2>/dev/null; do sleep 1; done
+	echo "dn: cn=config
+changetype: modify
+replace: nsslapd-accesslog-maxlogsperdir
+nsslapd-accesslog-maxlogsperdir: 1
+-
+replace: nsslapd-accesslog-logexpirationtime
+nsslapd-accesslog-logexpirationtime: -1
+-
+replace: nsslapd-accesslog-logrotationtime
+nsslapd-accesslog-logrotationtime: -1
+-
+replace: nsslapd-accesslog-logbuffering
+nsslapd-accesslog-logbuffering: off
+" | ldapmodify $LDAP_OPTS || exit 1
+}
+
+startLog() {
+	rm -rf "$INSTANCE_LOG_DIR/access" "$INSTANCE_LOG_DIR/audit" "$INSTANCE_LOG_DIR/errors" || exit 2
+	/pipes.sh "ACCESS:$INSTANCE_LOG_DIR/access" "AUDIT:$INSTANCE_LOG_DIR/audit" "ERROR:$INSTANCE_LOG_DIR/errors" &
+	LOGPID=$!
+	while ps "$LOGPID" >/dev/null && [ ! -p "$INSTANCE_LOG_DIR/errors" ]; do sleep 1; done # Wait until pipes initialized
+	ps "$LOGPID" >/dev/null || exit 2
+	chown root:nobody "$INSTANCE_LOG_DIR/access" "$INSTANCE_LOG_DIR/audit" "$INSTANCE_LOG_DIR/errors"
+	chmod 660 "$INSTANCE_LOG_DIR/access" "$INSTANCE_LOG_DIR/audit" "$INSTANCE_LOG_DIR/errors"
+}
+
+slapdPID() {
+	ps h -o pid -C ns-slapd
+}
+
+terminateSynchronously() {
+	[ ! -z "$1" ] || return 0
+	kill "$1" 2>/dev/null
+	awaitTermination "$1"
 }
 
 awaitTermination() {
@@ -72,38 +110,34 @@ awaitTermination() {
 	done
 }
 
-slapdpid() {
-	ps h -o pid -C ns-slapd
-}
-
-terminateSynchronously() {
-	kill "$1" 2>/dev/null || echo "Couldn't terminate 389 directory server since it is not running" >&2
-	awaitTermination "$1"
-}
-
 terminateGracefully() {
 	echo "Terminating gracefully"
 	trap : SIGHUP SIGINT SIGQUIT SIGTERM # Disable termination call on signal to avoid infinite recursion
-	terminateSynchronously $(slapdpid)
-	#kill $SYSLOG_PID
-	#terminateSynchronously $SYSLOG_PID
-	exit 0
+	terminateSynchronously $(slapdPID)
+	terminateSynchronously $LOGPID
 }
 
 case "$1" in
 	ns-slapd|ldapmodify|ldapadd|ldapdelete|ldapsearch)
-		#mkdir -p "$INSTANCE_LOG_DIR"
-		#mkfifo "$INSTANCE_LOG_DIR/"
 		setupDirsrvInstance # Install if directory doesn't exist
-
+		startLog
 		CMD="$1"
 		shift
 		SLAPD_ARGS=
-		if [ "$CMD" = ns-slapd ]; then SLAPD_ARGS=$@; fi
-		ns-slapd -D "$INSTANCE_DIR" $SLAPD_ARGS || exit $?
+		if [ "$CMD" = ns-slapd ]; then
+			SLAPD_ARGS=$@
+			if [ "$(slapdPID)" ]; then
+				echo "server is already running" >&2
+				exit 1
+			fi
+		fi
+		if [ ! "$(slapdPID)" ]; then
+			ns-slapd -D "$INSTANCE_DIR" $SLAPD_ARGS || exit $?
+			disableSlapdLogRotation
+		fi
 
 		# TODO: handle proper logging: maybe try fedora image: if it contains newer version of 389ds it may be able to log to syslog as in http://directory.fedoraproject.org/docs/389ds/design/logging-multiple-backends.html
-		tail -f $INSTANCE_LOG_DIR/{access,errors} --max-unchanged-stats=5 &
+		#tail -f $INSTANCE_LOG_DIR/{access,errors} --max-unchanged-stats=5 &
 		trap terminateGracefully SIGHUP SIGINT SIGQUIT SIGTERM # Register signal handler for orderly shutdown
 
 		if [ ! "$CMD" = ns-slapd ]; then # LDAP operations
@@ -111,8 +145,9 @@ case "$1" in
 			until timeout 1 bash -c "</dev/tcp/localhost/$LDAP_SERVER_PORT" 2>/dev/null; do
 				sleep 1
 			done
-			"$CMD" -x -h localhost -p "$LDAP_SERVER_PORT" -D "$LDAP_ROOT_DN" -w "$LDAP_ROOT_DN_PWD" $@
-			terminateSynchronously $(slapdpid)
+			"$CMD" $LDAP_OPTS $@
+			terminateSynchronously $(slapdPID)
+			terminateSynchronously $LOGPID
 		else
 			wait
 		fi
@@ -138,7 +173,7 @@ case "$1" in
 	restore)
 		if [ ! "$2" ]; then echo "Usage: $0 restore BACKUPFILE.tar.bz2" >&2; exit 1; fi
 		if [ ! -f "$2" ]; then echo "Backup file $2 does not exist" >&2; exit 1; fi
-		if [ "$(slapdpid)" ]; then echo "You must terminate ns-slapd before you can restore dump" >&2; exit 1; fi
+		if [ "$(slapdPID)" ]; then echo "You must terminate ns-slapd before you can restore dump" >&2; exit 1; fi
 		setupDirsrvInstance # Install if directory doesn't exist
 		EXTRACT_DIR=$(mktemp -d)
 		(cd $EXTRACT_DIR && tar xjvf "$2") || exit $?

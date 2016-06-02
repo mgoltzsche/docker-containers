@@ -19,7 +19,9 @@ RUN set -x \
 EXPOSE 389
 
 VOLUME /var/lib/dirsrv
+VOLUME /backup
 
+ADD pipes.sh /
 ADD entrypoint.sh /
 #ENTRYPOINT ["tini", "--", "/entrypoint.sh"]
 ENTRYPOINT ["/entrypoint.sh"]
