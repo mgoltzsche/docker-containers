@@ -19,9 +19,15 @@ PIPES=$@
 
 catPipe() {
 	if [ "$2" ]; then
-		while true; do
-			sed -u "s/^/$2/g" "$1" || exit 1 # -u option not available under alpine linux
-		done
+		if echo | sed -u 's/^/p/g' 2>/dev/null >&2; then # if sed -u supported (unbuffered)
+			while true; do
+				sed -u "s/^/$2/g" "$1" || exit 1
+			done
+		else
+			while true; do
+				cat "$1" | while read -r line; do echo "$2$line"; done
+			done
+		fi
 	else
 		while true; do
 			cat "$1" || exit 1

@@ -41,7 +41,7 @@ services:
       LOGSPOUT: ignore
     volumes:
       - "./logstash.conf:/config/logstash.conf"
-      - "./scripts/wait-for-tcp-port.sh:/wait-for-tcp-port.sh"
+      - "./wait-for-tcp-port.sh:/wait-for-tcp-port.sh"
     #depends_on:
     #  - elasticsearch
     #links:
@@ -50,7 +50,7 @@ services:
     image: kibana:5
     command: "./wait-for-tcp-port.sh elasticsearch 9200 kibana -e http://elasticsearch:9200"
     volumes:
-      - "./scripts/wait-for-tcp-port.sh:/wait-for-tcp-port.sh"
+      - "./wait-for-tcp-port.sh:/wait-for-tcp-port.sh"
     ports:
       - "5601:5601" # Kibana web UI
     environment:

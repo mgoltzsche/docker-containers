@@ -50,7 +50,7 @@ Suffix= $LDAP_SUFFIX
 RootDN= $LDAP_ROOT_DN
 RootDNPwd= $LDAP_ROOT_DN_PWD
 InstallLdifFile= $LDAP_INSTALL_LDIF_FILE
-		" || exit 2
+		" || exit 1
 	fi
 
     # Disable SELinux (taken from https://github.com/ioggstream/dockerfiles/blob/master/389ds/tls/entrypoint.sh)
@@ -59,14 +59,21 @@ InstallLdifFile= $LDAP_INSTALL_LDIF_FILE
     sed -i '/if (@errs = startServer($inf))/,/}/d' /usr/lib64/dirsrv/perl/*
 
 	# Install LDAP server with config file
-	setup-ds.pl -sdf "$LDAP_INSTALL_INF_FILE" || exit 3
+	setup-ds.pl -sdf "$LDAP_INSTALL_INF_FILE" || exit 1
 	rm -rf /tmp/ds-config.inf 2>/dev/null
+}
+
+waitForService() {
+	until timeout 1 bash -c "</dev/tcp/$1/$2" 2>/dev/null; do
+		echo "Waiting for service $1:$2 to become available"
+		sleep 1
+	done
 }
 
 disableSlapdLogRotation() {
 	# Disables slapd log rotation (to use named pipe)
 	echo "Disabling log rotation"
-	until timeout 1 bash -c "</dev/tcp/localhost/$LDAP_SERVER_PORT" 2>/dev/null; do sleep 1; done
+	waitForService localhost $LDAP_SERVER_PORT
 	echo "dn: cn=config
 changetype: modify
 replace: nsslapd-accesslog-maxlogsperdir
@@ -83,14 +90,67 @@ nsslapd-accesslog-logbuffering: off
 " | ldapmodify $LDAP_OPTS || exit 1
 }
 
+catPipe() {
+	while true; do
+		sed -u "s/]/] $2/g" "$1" || exit 1
+	done
+}
+
 startLog() {
-	rm -rf "$INSTANCE_LOG_DIR/access" "$INSTANCE_LOG_DIR/audit" "$INSTANCE_LOG_DIR/errors" || exit 2
-	/pipes.sh "ACCESS:$INSTANCE_LOG_DIR/access" "AUDIT:$INSTANCE_LOG_DIR/audit" "ERROR:$INSTANCE_LOG_DIR/errors" &
-	LOGPID=$!
-	while ps "$LOGPID" >/dev/null && [ ! -p "$INSTANCE_LOG_DIR/errors" ]; do sleep 1; done # Wait until pipes initialized
-	ps "$LOGPID" >/dev/null || exit 2
-	chown root:nobody "$INSTANCE_LOG_DIR/access" "$INSTANCE_LOG_DIR/audit" "$INSTANCE_LOG_DIR/errors"
-	chmod 660 "$INSTANCE_LOG_DIR/access" "$INSTANCE_LOG_DIR/audit" "$INSTANCE_LOG_DIR/errors"
+	set -e : ${LOGSTASH_HOST:=logstash}
+	ACCESS_PIPE=$INSTANCE_LOG_DIR/access
+	AUDIT_PIPE=$INSTANCE_LOG_DIR/audit
+	ERROR_PIPE=$INSTANCE_LOG_DIR/errors
+	PIPE_PATHS="$ACCESS_PIPE $AUDIT_PIPE $ERROR_PIPE"
+	#PIPE_DEFS="ACCESS:$INSTANCE_LOG_DIR/access AUDIT:$INSTANCE_LOG_DIR/audit ERROR:$INSTANCE_LOG_DIR/errors"
+	rm -rf /tmp/log-pipe $PIPE_PATHS || exit 1
+	for PIPE in $PIPE_PATHS; do mkfifo $PIPE || exit 1; done
+	if [ "$LOGSTASH_PORT" ]; then # Also log to logstash via tcp
+		#/pipes.sh $PIPE_DEFS | telnet -E "$LOGSTASH_HOST" "$LOGSTASH_PORT" &
+
+		mkfifo /tmp/log-pipe || exit 1
+		catPipe $ACCESS_PIPE "ACCESS" >/tmp/log-pipe &
+		LOG_PIDS="$LOG_PIDS $!"
+		catPipe $AUDIT_PIPE "AUDIT" >/tmp/log-pipe &
+		LOG_PIDS="$LOG_PIDS $!"
+		catPipe $ERROR_PIPE "ERROR" >/tmp/log-pipe &
+		LOG_PIDS="$LOG_PIDS $!"
+		
+		(
+		while true; do
+			waitForService $LOGSTASH_HOST $LOGSTASH_PORT
+			# TODO: Retry sending last part when pipe breaks (due to log server connection loss) - or use nc -u (UDP) to not block the application at all and reduce connection overhead
+			catPipe /tmp/log-pipe | telnet -E $LOGSTASH_HOST $LOGSTASH_PORT
+		done
+		echo "Exit log loop"
+		) &
+		LOG_PIDS="$LOG_PIDS $!"
+
+		#(
+		#	/pipes.sh $PIPE_DEFS | while read -r line; do
+		#		echo "$line";
+		#		until echo "$line" | telnet "$LOGSTASH_HOST" "$LOGSTASH_PORT"; do
+		#			sleep 1 # Wait a second and retry to send log
+		#		done
+		#	done
+		#) &
+		#if ! ps "$!" >/dev/null; then
+		#	echo "Failed to start logging" >&2
+		#	exit 1
+		#fi
+	else
+		#/pipes.sh $PIPE_DEFS &
+		catPipe $ACCESS_PIPE "ACCESS" &
+		LOG_PIDS="$LOG_PIDS $!"
+		catPipe $AUDIT_PIPE "AUDIT" &
+		LOG_PIDS="$LOG_PIDS $!"
+		catPipe $ERROR_PIPE "ERROR" &
+		LOG_PIDS="$LOG_PIDS $!"
+	fi
+	while ps $LOG_PIDS >/dev/null && [ ! -p "$INSTANCE_LOG_DIR/errors" ]; do sleep 1; done # Wait until pipes initialized
+	ps $LOG_PIDS >/dev/null || exit 1
+	chown root:nobody $PIPE_PATHS || exit 1
+	chmod 660 $PIPE_PATHS || exit 1
 }
 
 slapdPID() {
@@ -98,9 +158,10 @@ slapdPID() {
 }
 
 terminateSynchronously() {
-	[ ! -z "$1" ] || return 0
-	kill "$1" 2>/dev/null
-	awaitTermination "$1"
+	for PID in $@; do
+		kill "$PID" 2>/dev/null
+		awaitTermination "$PID"
+	done
 }
 
 awaitTermination() {
@@ -113,8 +174,7 @@ awaitTermination() {
 terminateGracefully() {
 	echo "Terminating gracefully"
 	trap : SIGHUP SIGINT SIGQUIT SIGTERM # Disable termination call on signal to avoid infinite recursion
-	terminateSynchronously $(slapdPID)
-	terminateSynchronously $LOGPID
+	terminateSynchronously $(slapdPID) $LOG_PIDS
 }
 
 case "$1" in
@@ -136,18 +196,13 @@ case "$1" in
 			disableSlapdLogRotation
 		fi
 
-		# TODO: handle proper logging: maybe try fedora image: if it contains newer version of 389ds it may be able to log to syslog as in http://directory.fedoraproject.org/docs/389ds/design/logging-multiple-backends.html
-		#tail -f $INSTANCE_LOG_DIR/{access,errors} --max-unchanged-stats=5 &
 		trap terminateGracefully SIGHUP SIGINT SIGQUIT SIGTERM # Register signal handler for orderly shutdown
 
 		if [ ! "$CMD" = ns-slapd ]; then # LDAP operations
 			# Wait for LDAP server to become available
-			until timeout 1 bash -c "</dev/tcp/localhost/$LDAP_SERVER_PORT" 2>/dev/null; do
-				sleep 1
-			done
+			waitForService localhost $LDAP_SERVER_PORT
 			"$CMD" $LDAP_OPTS $@
-			terminateSynchronously $(slapdPID)
-			terminateSynchronously $LOGPID
+			terminateSynchronously $(slapdPID) $LOG_PIDS
 		else
 			wait
 		fi

@@ -1,7 +1,7 @@
 FROM centos:7
 MAINTAINER "Max Goltzsche" <max.goltzsche@algorythm.de>
 RUN yum -y update \
-	&& yum install -y 389-ds-base bzip2 \
+	&& yum install -y 389-ds-base bzip2 telnet \
 	&& yum clean all
 
 # Add tini for signal processing (graceful container termination) and zombie killing
@@ -14,7 +14,7 @@ RUN set -x \
 	&& gpg --batch --verify /usr/local/bin/tini.asc /usr/local/bin/tini \
 	&& rm -r "$GNUPGHOME" /usr/local/bin/tini.asc \
 	&& chmod +x /usr/local/bin/tini \
-	&& tini -h
+	&& tini -h >/dev/null
 
 EXPOSE 389
 
