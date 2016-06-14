@@ -1,25 +1,27 @@
-#!/bin/sh
+#!/bin/bash
 
 FULL_MACHINE_NAME=$(hostname -f)
 INSTANCE_ID=$(hostname -s)
 INSTANCE_DIR="/etc/dirsrv/slapd-$INSTANCE_ID"
 INSTANCE_LOG_DIR="/var/log/dirsrv/slapd-$INSTANCE_ID"
 
+# Attention set cannot be used since it changes program arguments which are required below
+LDAP_SERVER_PORT=${LDAP_SERVER_PORT:=389}
+LDAP_ROOT_DN=${LDAP_ROOT_DN:='cn=dirmanager'}
+LDAP_ROOT_DN_PWD=${LDAP_ROOT_DN_PWD:='Secret123'}
+LDAP_OPTS=${LDAP_OPTS:=-x -h localhost -p "$LDAP_SERVER_PORT" -D "$LDAP_ROOT_DN" -w "$LDAP_ROOT_DN_PWD"}
+
 setupDirsrvInstance() {
 	[ ! -d "$INSTANCE_DIR" ] || return 0 # Skip setup if already configured
 
 	set -e
 	: ${LDAP_INSTALL_INF_FILE:=/tmp/ds-config.inf}
-	: ${LDAP_SERVER_PORT:=389}
 	: ${LDAP_ADMIN_DOMAIN:=$(hostname -d)}
 	: ${LDAP_ADMIN_DOMAIN_SUFFIX:=$(echo "dc=$LDAP_ADMIN_DOMAIN" | sed 's/\./,dc=/g')}
-	: ${LDAP_ROOT_DN:='cn=dirmanager'}
-	: ${LDAP_ROOT_DN_PWD:='Secret123'}
 	: ${LDAP_CONFIG_DIRECTORY_ADMIN_ID:=admin}
 	: ${LDAP_CONFIG_DIRECTORY_ADMIN_PWD:=$LDAP_ROOT_DN_PWD}
 	: ${LDAP_SUFFIX:=$LDAP_ADMIN_DOMAIN_SUFFIX}
 	: ${LDAP_INSTALL_LDIF_FILE:=suggest}
-	: ${LDAP_OPTS:=-x -h localhost -p "$LDAP_SERVER_PORT" -D "$LDAP_ROOT_DN" -w "$LDAP_ROOT_DN_PWD"}
 
 	if [ -f "$LDAP_INSTALL_INF_FILE" ]; then
 		echo "Installing LDAP server instance from configuration file $LDAP_INSTALL_INF_FILE"
@@ -91,9 +93,15 @@ nsslapd-accesslog-logbuffering: off
 }
 
 catPipe() {
-	while true; do
-		sed -u "s/]/] $2/g" "$1" || exit 1
-	done
+	if [ "$2" ]; then
+		while true; do
+			sed -Eu "s/^\[[0-9a-zA-Z\/:+ ]+\]/\0 $2/g" "$1" || exit 1
+		done
+	else
+		while true; do
+			cat "$1" || exit 1
+		done
+	fi
 }
 
 startLog() {
@@ -109,20 +117,19 @@ startLog() {
 		#/pipes.sh $PIPE_DEFS | telnet -E "$LOGSTASH_HOST" "$LOGSTASH_PORT" &
 
 		mkfifo /tmp/log-pipe || exit 1
-		catPipe $ACCESS_PIPE "ACCESS" >/tmp/log-pipe &
+		catPipe $ACCESS_PIPE ACCESS >/tmp/log-pipe &
 		LOG_PIDS="$LOG_PIDS $!"
-		catPipe $AUDIT_PIPE "AUDIT" >/tmp/log-pipe &
+		catPipe $AUDIT_PIPE AUDIT >/tmp/log-pipe &
 		LOG_PIDS="$LOG_PIDS $!"
-		catPipe $ERROR_PIPE "ERROR" >/tmp/log-pipe &
+		catPipe $ERROR_PIPE ERROR >/tmp/log-pipe &
 		LOG_PIDS="$LOG_PIDS $!"
-		
+
 		(
-		while true; do
-			waitForService $LOGSTASH_HOST $LOGSTASH_PORT
-			# TODO: Retry sending last part when pipe breaks (due to log server connection loss) - or use nc -u (UDP) to not block the application at all and reduce connection overhead
-			catPipe /tmp/log-pipe | telnet -E $LOGSTASH_HOST $LOGSTASH_PORT
-		done
-		echo "Exit log loop"
+			while true; do
+				waitForService $LOGSTASH_HOST $LOGSTASH_PORT
+				# TODO: Retry sending last part when pipe breaks (due to log server connection loss) - or use nc -u (UDP) to not block the application at all and reduce connection overhead
+				catPipe /tmp/log-pipe | tee >(telnet -E $LOGSTASH_HOST $LOGSTASH_PORT)
+			done
 		) &
 		LOG_PIDS="$LOG_PIDS $!"
 
@@ -140,11 +147,11 @@ startLog() {
 		#fi
 	else
 		#/pipes.sh $PIPE_DEFS &
-		catPipe $ACCESS_PIPE "ACCESS" &
+		catPipe $ACCESS_PIPE ACCESS &
 		LOG_PIDS="$LOG_PIDS $!"
-		catPipe $AUDIT_PIPE "AUDIT" &
+		catPipe $AUDIT_PIPE AUDIT &
 		LOG_PIDS="$LOG_PIDS $!"
-		catPipe $ERROR_PIPE "ERROR" &
+		catPipe $ERROR_PIPE ERROR &
 		LOG_PIDS="$LOG_PIDS $!"
 	fi
 	while ps $LOG_PIDS >/dev/null && [ ! -p "$INSTANCE_LOG_DIR/errors" ]; do sleep 1; done # Wait until pipes initialized
