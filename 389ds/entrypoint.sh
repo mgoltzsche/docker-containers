@@ -1,4 +1,5 @@
 #!/bin/bash
+# bash required for tee >(telnet ...) logging call only
 
 FULL_MACHINE_NAME=$(hostname -f)
 INSTANCE_ID=$(hostname -s)
@@ -105,23 +106,21 @@ catPipe() {
 }
 
 startLog() {
-	set -e : ${LOGSTASH_HOST:=logstash}
+	set -e : ${LOGSTASH_HOST:=logstash} ${LOGSTASH_PORT:=10389}
 	ACCESS_PIPE=$INSTANCE_LOG_DIR/access
 	AUDIT_PIPE=$INSTANCE_LOG_DIR/audit
 	ERROR_PIPE=$INSTANCE_LOG_DIR/errors
 	PIPE_PATHS="$ACCESS_PIPE $AUDIT_PIPE $ERROR_PIPE"
-	#PIPE_DEFS="ACCESS:$INSTANCE_LOG_DIR/access AUDIT:$INSTANCE_LOG_DIR/audit ERROR:$INSTANCE_LOG_DIR/errors"
 	rm -rf /tmp/log-pipe $PIPE_PATHS || exit 1
 	for PIPE in $PIPE_PATHS; do mkfifo $PIPE || exit 1; done
-	if [ "$LOGSTASH_PORT" ]; then # Also log to logstash via tcp
-		#/pipes.sh $PIPE_DEFS | telnet -E "$LOGSTASH_HOST" "$LOGSTASH_PORT" &
-
+	SERVICE_HOST=$(hostname -s)
+	if [ "$LOGSTASH_ENABLED" ]; then # Also log to logstash via tcp
 		mkfifo /tmp/log-pipe || exit 1
-		catPipe $ACCESS_PIPE ACCESS >/tmp/log-pipe &
+		catPipe $ACCESS_PIPE "$SERVICE_HOST ACCESS" >/tmp/log-pipe &
 		LOG_PIDS="$LOG_PIDS $!"
-		catPipe $AUDIT_PIPE AUDIT >/tmp/log-pipe &
+		catPipe $AUDIT_PIPE "$SERVICE_HOST AUDIT" >/tmp/log-pipe &
 		LOG_PIDS="$LOG_PIDS $!"
-		catPipe $ERROR_PIPE ERROR >/tmp/log-pipe &
+		catPipe $ERROR_PIPE "$SERVICE_HOST ERROR" >/tmp/log-pipe &
 		LOG_PIDS="$LOG_PIDS $!"
 
 		(
@@ -132,26 +131,12 @@ startLog() {
 			done
 		) &
 		LOG_PIDS="$LOG_PIDS $!"
-
-		#(
-		#	/pipes.sh $PIPE_DEFS | while read -r line; do
-		#		echo "$line";
-		#		until echo "$line" | telnet "$LOGSTASH_HOST" "$LOGSTASH_PORT"; do
-		#			sleep 1 # Wait a second and retry to send log
-		#		done
-		#	done
-		#) &
-		#if ! ps "$!" >/dev/null; then
-		#	echo "Failed to start logging" >&2
-		#	exit 1
-		#fi
 	else
-		#/pipes.sh $PIPE_DEFS &
-		catPipe $ACCESS_PIPE ACCESS &
+		catPipe $ACCESS_PIPE "$SERVICE_HOST ACCESS" &
 		LOG_PIDS="$LOG_PIDS $!"
-		catPipe $AUDIT_PIPE AUDIT &
+		catPipe $AUDIT_PIPE "$SERVICE_HOST AUDIT" &
 		LOG_PIDS="$LOG_PIDS $!"
-		catPipe $ERROR_PIPE ERROR &
+		catPipe $ERROR_PIPE "$SERVICE_HOST ERROR" &
 		LOG_PIDS="$LOG_PIDS $!"
 	fi
 	while ps $LOG_PIDS >/dev/null && [ ! -p "$INSTANCE_LOG_DIR/errors" ]; do sleep 1; done # Wait until pipes initialized
@@ -205,13 +190,12 @@ case "$1" in
 
 		trap terminateGracefully SIGHUP SIGINT SIGQUIT SIGTERM # Register signal handler for orderly shutdown
 
-		if [ ! "$CMD" = ns-slapd ]; then # LDAP operations
-			# Wait for LDAP server to become available
+		if [ "$CMD" = ns-slapd ]; then # LDAP operations
+			wait
+		else
 			waitForService localhost $LDAP_SERVER_PORT
 			"$CMD" $LDAP_OPTS $@
 			terminateSynchronously $(slapdPID) $LOG_PIDS
-		else
-			wait
 		fi
 	;;
 	dump)
@@ -233,7 +217,7 @@ case "$1" in
 		exit $ERROR
 	;;
 	restore)
-		if [ ! "$2" ]; then echo "Usage: $0 restore BACKUPFILE.tar.bz2" >&2; exit 1; fi
+		if [ ! "$2" ]; then echo "Usage: $0 restore BACKUPFILE (tar.bz2)" >&2; exit 1; fi
 		if [ ! -f "$2" ]; then echo "Backup file $2 does not exist" >&2; exit 1; fi
 		if [ "$(slapdPID)" ]; then echo "You must terminate ns-slapd before you can restore dump" >&2; exit 1; fi
 		setupDirsrvInstance # Install if directory doesn't exist

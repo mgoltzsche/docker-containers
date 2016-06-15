@@ -24,7 +24,7 @@ services:
     image: algorythm/389ds:latest
     hostname: ldap.algorythm.de
     environment:
-      LOGSTASH_PORT: 10389
+      LOGSTASH_ENABLED: "true"
     ports:
       - "389:389"
     depends_on:

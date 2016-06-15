@@ -42,10 +42,24 @@ services:
       - logstash
     links:
       - logstash
-  apacheds:
+
+#  apacheds:
+#    extends:
+#      file: apacheds/docker-compose.yml
+#      service: apacheds
+  ldap:
     extends:
-      file: apacheds/docker-compose.yml
-      service: apacheds
+      file: 389ds/docker-compose.yml
+      service: ldap
+    hostname: ldap.algorythm.de
+    environment:
+      LOGSTASH_ENABLED: "true"
+#    volumes:
+#      - "./data:/var/lib/dirsrv"
+    depends_on:
+      - logstash
+    links:
+      - logstash
   mail:
     extends:
       file: mail/docker-compose.yml
