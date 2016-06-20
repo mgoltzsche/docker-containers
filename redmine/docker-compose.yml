@@ -1,6 +1,15 @@
 # Runs Redmine Backlogs with PostgreSQL database
 version: '2'
 services:
+  ldap:
+    extends:
+      file: ../389ds/docker-compose.yml
+      service: ldap
+    environment:
+      LDAP_USER_DN_REDMINE: "${REDMINE_LDAP_USER_DN}"
+      LDAP_USER_PW_REDMINE: "${REDMINE_LDAP_USER_PW}"
+#    volumes:
+#      - "./data:/var/lib/dirsrv"
   postgres:
     extends:
       file: ../postgres/docker-compose.yml
@@ -15,6 +24,9 @@ services:
       POSTGRES_PORT_5432_TCP: "true"
       POSTGRES_ENV_POSTGRES_USER: redmine
       POSTGRES_ENV_POSTGRES_PASSWORD: "${REDMINE_POSTGRES_PASSWORD}"
+      LDAP_AUTH: "ldap-default"
+      LDAP_USER_DN: "${REDMINE_LDAP_USER_DN}"
+      LDAP_USER_PW: "${REDMINE_LDAP_USER_PW}"
     ports:
       - "3000:3000"
 #    depends_on:

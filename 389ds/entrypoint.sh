@@ -11,18 +11,18 @@ LDAP_SERVER_PORT=${LDAP_SERVER_PORT:=389}
 LDAP_ROOT_DN=${LDAP_ROOT_DN:='cn=dirmanager'}
 LDAP_ROOT_DN_PWD=${LDAP_ROOT_DN_PWD:='Secret123'}
 LDAP_OPTS=${LDAP_OPTS:=-x -h localhost -p "$LDAP_SERVER_PORT" -D "$LDAP_ROOT_DN" -w "$LDAP_ROOT_DN_PWD"}
+LDAP_ADMIN_DOMAIN=${LDAP_ADMIN_DOMAIN:=$(hostname -d)}
+LDAP_ADMIN_DOMAIN_SUFFIX=${LDAP_ADMIN_DOMAIN_SUFFIX:=$(echo "dc=$LDAP_ADMIN_DOMAIN" | sed 's/\./,dc=/g')}
+LDAP_SUFFIX=${LDAP_SUFFIX:=$LDAP_ADMIN_DOMAIN_SUFFIX}
 
 setupDirsrvInstance() {
 	[ ! -d "$INSTANCE_DIR" ] || return 0 # Skip setup if already configured
 
 	set -e
 	: ${LDAP_INSTALL_INF_FILE:=/tmp/ds-config.inf}
-	: ${LDAP_ADMIN_DOMAIN:=$(hostname -d)}
-	: ${LDAP_ADMIN_DOMAIN_SUFFIX:=$(echo "dc=$LDAP_ADMIN_DOMAIN" | sed 's/\./,dc=/g')}
+	: ${LDAP_INSTALL_LDIF_FILE:=suggest}
 	: ${LDAP_CONFIG_DIRECTORY_ADMIN_ID:=admin}
 	: ${LDAP_CONFIG_DIRECTORY_ADMIN_PWD:=$LDAP_ROOT_DN_PWD}
-	: ${LDAP_SUFFIX:=$LDAP_ADMIN_DOMAIN_SUFFIX}
-	: ${LDAP_INSTALL_LDIF_FILE:=suggest}
 
 	if [ -f "$LDAP_INSTALL_INF_FILE" ]; then
 		echo "Installing LDAP server instance from configuration file $LDAP_INSTALL_INF_FILE"
@@ -36,7 +36,7 @@ setupDirsrvInstance() {
 			exit 1
 		fi
 
-		echo "Installing LDAP server instance with:$(echo '';set | grep -E '^LDAP_' | sed -E 's/(^[^=]+_PWD=).+/\1***/')"
+		echo "Installing LDAP server instance with:$(echo '';set | grep -E '^LDAP_' | sed -E 's/(^[^=]+_PWD=).+/\1***/' | grep -Ev '^LDAP_USER_')"
 		echo > "$LDAP_INSTALL_INF_FILE" "
 [General]
 FullMachineName= $FULL_MACHINE_NAME
@@ -64,6 +64,88 @@ InstallLdifFile= $LDAP_INSTALL_LDIF_FILE
 	# Install LDAP server with config file
 	setup-ds.pl -sdf "$LDAP_INSTALL_INF_FILE" || exit 1
 	rm -rf /tmp/ds-config.inf 2>/dev/null
+}
+
+# TODO: finish system user setup: user password, password reset, master password reset
+setupSystemUsers() {
+	LDAP_USERS="$(set | grep -Eo '^LDAP_USER_DN_[^=]+' | sed 's/^LDAP_USER_DN_//')" # prevent user created from LDAP_USER_*_PASSWORD var
+
+	if [ "$LDAP_USERS" ]; then
+		waitForService localhost $LDAP_SERVER_PORT
+
+		for LDAP_USER_KEY in "$LDAP_USERS"; do
+			LDAP_USER_DN=$(eval "echo \$LDAP_USER_DN_$LDAP_USER_KEY")
+			LDAP_USER_PASSWORD=$(eval "echo \$LDAP_USER_PW_$LDAP_USER_KEY")
+			LDAP_USER_PREFIX=$(echo "$LDAP_USER_DN" | grep -Pio '^[a-z]+=[a-z0-9_\- ]+(?=,)' | sed 's/=/: /')
+			LDAP_USER_EMAIL=$(eval "echo \$LDAP_USER_EMAIL_$LDAP_USER_KEY")
+			LDAP_USER_EMAIL=${LDAP_USER_EMAIL:-$(echo "$LDAP_USER_PREFIX" | grep -Po '(?<==).*')"@service.$LDAP_ADMIN_DOMAIN"}
+
+			if [ ! "$LDAP_USER_DN" ]; then
+				echo "No LDAP user DN defined for $LDAP_USER_KEY" >&2
+				echo "Set LDAP_USER_DN_$LDAP_USER_KEY='cn=user,ou=Special Users,dc=example,dc=org'" >&2
+				exit 1
+			fi
+
+			if [ ! "$LDAP_USER_PASSWORD" ]; then
+				echo "No password defined for LDAP user $LDAP_USER_KEY: $LDAP_USER_DN" >&2
+				echo "Set LDAP_USER_PW_${LDAP_USER_KEY} env var" >&2
+				exit 1
+			fi
+
+			if [ ! "$LDAP_USER_PREFIX" ]; then
+				echo "Invalid DN format for LDAP_USER_KEY: $LDAP_USER_DN" >&2
+				echo "Expecting e.g.: cn=example,ou=Special Users,dc=example,dc=org" >&2
+				exit 1
+			fi
+
+			if ! ldapsearch $LDAP_OPTS -b "$LDAP_USER_DN" -LLL + * >/dev/null; then
+				# Create user if not exists
+				echo "Adding LDAP user $LDAP_USER_DN"
+				LDIF="
+dn: $LDAP_USER_DN
+objectClass: applicationProcess
+objectClass: simpleSecurityObject
+objectClass: top
+objectClass: mailRecipient
+$LDAP_USER_PREFIX
+mail: $LDAP_USER_EMAIL
+mailForwardingAddress: max.goltzsche@algorythm.de
+userPassword:: $(encodeLdapPassword $LDAP_USER_PASSWORD)"
+				if ! echo "$LDIF" | ldapadd $LDAP_OPTS; then
+					echo "$LDIF" >&2
+					exit 1
+				fi
+			else
+				# Reset user password
+				echo "Resetting LDAP user's password: $LDAP_USER_DN"
+
+				LDIF="
+dn: $LDAP_USER_DN
+changetype: modify
+replace: userPassword
+userPassword:: $(encodeLdapPassword $LDAP_USER_PASSWORD)"
+				if ! echo "$LDIF" | ldapmodify $LDAP_OPTS; then
+					echo "$LDIF" >&2
+					exit 1
+				fi
+			fi
+		done
+	fi
+}
+
+encodeLdapPassword() {
+echo "
+import os
+import hashlib
+import base64
+
+password = '$1'
+salt = os.urandom(4)
+h = hashlib.sha512(password)
+h.update(salt)
+password = '{SSHA512}' + base64.encodestring(h.digest() + salt).replace('\n', '')
+print base64.encodestring(password).replace('\n', '\n ')
+" | python
 }
 
 waitForService() {
@@ -185,7 +267,8 @@ case "$1" in
 		fi
 		if [ ! "$(slapdPID)" ]; then
 			ns-slapd -D "$INSTANCE_DIR" $SLAPD_ARGS || exit $?
-			disableSlapdLogRotation
+			disableSlapdLogRotation || exit 1
+			setupSystemUsers || exit 1
 		fi
 
 		trap terminateGracefully SIGHUP SIGINT SIGQUIT SIGTERM # Register signal handler for orderly shutdown

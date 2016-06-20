@@ -110,6 +110,7 @@ case "$1" in rails|thin|rake)
 			task_tracker=Task \
 			labels=false ||
 		exit 6
+		echo "Copying Feature workflow to Task workflow"
 		WORKFLOW_SQL="SELECT (SELECT id FROM trackers WHERE name='Task'),role_id,old_status_id,new_status_id FROM workflows WHERE type='WorkflowTransition' AND tracker_id=(SELECT id FROM trackers WHERE name='Feature');"
 		# Cannot use rails db --mode list since output is not supported when postgresql adapter is used
 		echo "$WORKFLOW_SQL" | gosu redmine rails db -p | grep -Eo '\d+\s*\|\s*\d+\s*\|\s*\d+\s*\|\s*\d+' | \
@@ -144,8 +145,8 @@ case "$1" in rails|thin|rake)
 		LDAP_PORT=${LDAP_PORT:-389}
 		LDAP_DOMAIN_CONTEXT=${LDAP_DOMAIN_CONTEXT:-"dc=${HOST_DOMAIN/./,dc=}"}
 		LDAP_BASE_DN=${LDAP_BASE_DN:-$LDAP_DOMAIN_CONTEXT}
-		LDAP_ACCOUNT=${LDAP_ACCOUNT:-"cn=redmine,ou=Special Users,$LDAP_DOMAIN_CONTEXT"}
-		LDAP_ACCOUNT_PASSWORD=${LDAP_ACCOUNT_PASSWORD:-secret}
+		LDAP_ACCOUNT=${LDAP_USER_DN:-"cn=redmine,ou=Special Users,$LDAP_DOMAIN_CONTEXT"}
+		LDAP_ACCOUNT_PASSWORD=${LDAP_USER_PW:-Secret123}
 		LDAP_FILTER=${LDAP_FILTER:-}
 		LDAP_ATTR_LOGIN=${LDAP_ATTR_LOGIN:-cn}
 		LDAP_ATTR_FIRSTNAME=${LDAP_ATTR_FIRSTNAME:-givenName}
@@ -154,9 +155,10 @@ case "$1" in rails|thin|rake)
 		LDAP_ONTHEFLY_REGISTER=${LDAP_ONTHEFLY_REGISTER:-t}
 		LDAP_TLS=${LDAP_TLS:-f}
 		LDAP_TIMEOUT=${LDAP_TIMEOUT:-30}
-		set | grep -E '^LDAP_' | sed -E 's/(^[^=]+PASSWORD=).*/\1***/i' # Show variables
+		set | grep -E '^LDAP_' | sed -E 's/(^[^=]+_(PASSWORD|PW)=).*/\1***/i' # Show variables
 
 		if ! echo "SELECT 'auth:'||name FROM auth_sources WHERE name='$LDAP_AUTH';" | rails db -p | grep -qw "auth:$LDAP_AUTH"; then
+			# Insert auth source if unconfigured
 			echo "INSERT INTO auth_sources(type,name,host,port,account,account_password,base_dn,filter,attr_login,attr_mail,attr_firstname,attr_lastname,onthefly_register,tls,timeout)
 					VALUES('AuthSourceLdap','$LDAP_AUTH','$LDAP_HOST',$LDAP_PORT,
 						'$LDAP_ACCOUNT','$LDAP_ACCOUNT_PASSWORD','$LDAP_BASE_DN',
@@ -165,6 +167,7 @@ case "$1" in rails|thin|rake)
 						'$LDAP_ONTHEFLY_REGISTER','$LDAP_TLS',$LDAP_TIMEOUT);" | gosu redmine rails db -p ||
 				(echo "Failed to insert LDAP auth source $LDAP_AUTH"; exit 10)
 		else
+			# Update existing auth source
 			echo "UPDATE auth_sources SET type='AuthSourceLdap',
 					host='$LDAP_HOST',port=$LDAP_PORT,
 					account='$LDAP_ACCOUNT',
@@ -175,11 +178,29 @@ case "$1" in rails|thin|rake)
 					attr_mail='$LDAP_ATTR_MAIL',
 					attr_firstname='$LDAP_ATTR_FIRSTNAME',
 					attr_lastname='$LDAP_ATTR_LASTNAME',
-					onthefly_register='$LDAP_ONTHEFLYREGISTER',
+					onthefly_register='$LDAP_ONTHEFLY_REGISTER',
 					tls='$LDAP_TLS',timeout=$LDAP_TIMEOUT
 					WHERE name='$LDAP_AUTH';" | gosu redmine rails db -p ||
 				(echo "Failed to update LDAP auth source $LDAP_AUTH_NAME"; exit 11)
 		fi
+
+		LDAP_CHECK="
+require 'rubygems'
+require 'net/ldap'
+ldap = Net::LDAP.new
+ldap.host = '$LDAP_HOST'
+ldap.port = $LDAP_PORT
+ldap.auth '$LDAP_ACCOUNT', '$LDAP_ACCOUNT_PASSWORD'
+ldap.bind
+ldap.search( :base => '$LDAP_ACCOUNT' ) do |entry|
+  exit 0
+end
+exit 1
+"
+		until echo "$LDAP_CHECK" | ruby; do
+			echo "Waiting for available LDAP server $LDAP_HOST:$LDAP_PORT and user $LDAP_ACCOUNT" >&2
+			sleep 1
+		done
 	fi
 
 	chown -R redmine:redmine files log public/plugin_assets

@@ -8,7 +8,10 @@ build:
 
 run:
 	# Run container
-	docker run -h ldap.algorythm.de -p "389:389" algorythm/389ds:latest
+	docker run -h ldap.algorythm.de -p "389:389" \
+		-e "LDAP_USER_DN_REDMINE=cn=redmine,ou=Special Users,dc=algorythm,dc=de" \
+		-e "LDAP_USER_PW_REDMINE=Secret123" \
+		algorythm/389ds:latest
 
 cat:
 	# Run container

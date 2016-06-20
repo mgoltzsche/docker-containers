@@ -51,15 +51,17 @@ services:
     extends:
       file: 389ds/docker-compose.yml
       service: ldap
-    hostname: ldap.algorythm.de
     environment:
       LOGSTASH_ENABLED: "true"
+      LDAP_USER_DN_REDMINE: "${REDMINE_LDAP_USER_DN}"
+      LDAP_USER_PW_REDMINE: "${REDMINE_LDAP_USER_PW}"
 #    volumes:
 #      - "./data:/var/lib/dirsrv"
     depends_on:
       - logstash
     links:
       - logstash
+  # TODO: fix mail integration of logstash (parser,connection) and ldap (user+password)
   mail:
     extends:
       file: mail/docker-compose.yml
@@ -71,7 +73,7 @@ services:
       file: common.yml
       service: postgres
     environment:
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_PASSWORD: "${POSTGRES_PASSWORD}"
       PG_USER_REDMINE: "${REDMINE_POSTGRES_PASSWORD}"
   redmine:
     extends:

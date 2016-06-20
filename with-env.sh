@@ -1,4 +1,4 @@
-#!/bin/sh
+#!/bin/bash
 
 if [ $# -lt 2 ]; then
 	echo "Usage $0 ENVIRONMENT COMMAND" >&2
@@ -7,7 +7,11 @@ if [ $# -lt 2 ]; then
 fi
 
 ENV_TYPE="$1"
-
-export $(find . -name "*.$ENV_TYPE.env" | xargs cat | grep -E '^[^#=]+=.*')
 shift
-docker-compose $@
+
+# (find . -name "*.$ENV_TYPE.env" -print0 | xargs -0 cat | grep -E '^[^#=]+=.*' && echo docker-compose $@) | xargs env # doesn't work since it occupies stdin
+
+IFS=$'\n' # Use line break as internal field separator
+ENVVARS=$(find . -name "*.$ENV_TYPE.env" -print0 | xargs -0 cat | grep -EZ '^[^#=]+=.*')
+
+env ${ENVVARS} docker-compose $@
