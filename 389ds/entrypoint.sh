@@ -2,7 +2,7 @@
 # bash required for tee >(telnet ...) logging call only
 
 FULL_MACHINE_NAME=$(hostname -f)
-INSTANCE_ID=$(hostname -s)
+INSTANCE_ID=${INSTANCE_ID:=$(hostname -s)}
 INSTANCE_DIR="/etc/dirsrv/slapd-$INSTANCE_ID"
 INSTANCE_LOG_DIR="/var/log/dirsrv/slapd-$INSTANCE_ID"
 
@@ -16,7 +16,14 @@ LDAP_ADMIN_DOMAIN_SUFFIX=${LDAP_ADMIN_DOMAIN_SUFFIX:=$(echo "dc=$LDAP_ADMIN_DOMA
 LDAP_SUFFIX=${LDAP_SUFFIX:=$LDAP_ADMIN_DOMAIN_SUFFIX}
 
 setupDirsrvInstance() {
-	[ ! -d "$INSTANCE_DIR" ] || return 0 # Skip setup if already configured
+	if [ -d "$INSTANCE_DIR" ]; then
+		# Reset directory manager password if instance already configured
+		echo "Resetting directory manager password"
+		ROOT_PWD_HASH=$(encodeLdapPassword "$LDAP_ROOT_DN_PWD") &&
+		ROOT_PWD_HASH=$(echo "$ROOT_PWD_HASH" | xargs | sed -E 's/ +/\\n /') &&
+		sed -i -E "s/^(nsslapd-rootpw:) .*/\1: $ROOT_PWD_HASH/g" "$INSTANCE_DIR/dse.ldif" || exit 1
+		return 0 # Skip setup if already configured
+	fi
 
 	set -e
 	: ${LDAP_INSTALL_INF_FILE:=/tmp/ds-config.inf}
@@ -66,7 +73,7 @@ InstallLdifFile= $LDAP_INSTALL_LDIF_FILE
 	rm -rf /tmp/ds-config.inf 2>/dev/null
 }
 
-# TODO: finish system user setup: user password, password reset, master password reset
+# TODO: finish system user setup: master password reset
 setupSystemUsers() {
 	LDAP_USERS="$(set | grep -Eo '^LDAP_USER_DN_[^=]+' | sed 's/^LDAP_USER_DN_//')" # prevent user created from LDAP_USER_*_PASSWORD var
 
@@ -110,7 +117,7 @@ objectClass: mailRecipient
 $LDAP_USER_PREFIX
 mail: $LDAP_USER_EMAIL
 mailForwardingAddress: max.goltzsche@algorythm.de
-userPassword:: $(encodeLdapPassword $LDAP_USER_PASSWORD)"
+userPassword:: $(encodeLdapPassword '$LDAP_USER_PASSWORD')"
 				if ! echo "$LDIF" | ldapadd $LDAP_OPTS; then
 					echo "$LDIF" >&2
 					exit 1
@@ -123,7 +130,7 @@ userPassword:: $(encodeLdapPassword $LDAP_USER_PASSWORD)"
 dn: $LDAP_USER_DN
 changetype: modify
 replace: userPassword
-userPassword:: $(encodeLdapPassword $LDAP_USER_PASSWORD)"
+userPassword:: $(encodeLdapPassword '$LDAP_USER_PASSWORD')"
 				if ! echo "$LDIF" | ldapmodify $LDAP_OPTS; then
 					echo "$LDIF" >&2
 					exit 1
@@ -134,18 +141,8 @@ userPassword:: $(encodeLdapPassword $LDAP_USER_PASSWORD)"
 }
 
 encodeLdapPassword() {
-echo "
-import os
-import hashlib
-import base64
-
-password = '$1'
-salt = os.urandom(4)
-h = hashlib.sha512(password)
-h.update(salt)
-password = '{SSHA512}' + base64.encodestring(h.digest() + salt).replace('\n', '')
-print base64.encodestring(password).replace('\n', '\n ')
-" | python
+	#pwdhash -s ssha512 "$1" | base64 -
+	pwdhash -s ssha512 "$1" | base64 - | xargs | sed 's/ /\n /'
 }
 
 waitForService() {

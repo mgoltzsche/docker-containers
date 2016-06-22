@@ -5,5 +5,5 @@ services:
     hostname: ldap.algorythm.de
     ports:
       - "389:389"
-#    volumes:
-#      - "./data:/var/lib/dirsrv"
+    volumes:
+      - "./data:/var/lib/dirsrv"
