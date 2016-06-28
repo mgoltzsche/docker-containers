@@ -8,7 +8,7 @@ build:
 
 run:
 	# Run container
-	docker run -p 3000:3000 -h redmine.algorythm.de -e LDAP_AUTH='LDAP' algorythm/redmine-backlogs:latest
+	docker run -p 3000:3000 -h redmine.algorythm.de algorythm/redmine-backlogs:latest
 
 db:
 	docker run -it -p 3000:3000 -h redmine algorythm/redmine-backlogs:latest rails db -p

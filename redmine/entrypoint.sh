@@ -1,70 +1,101 @@
 #!/bin/sh
 
-# Wait for logstash service to become available
-if [ "$LOGSTASH_ENABLED" ]; then
-	LOGSTASH_HOST=logstash
-	LOGSTASH_PORT=5000
-	until nc -vzw1 "$LOGSTASH_HOST" "$LOGSTASH_PORT" 2>/dev/null; do
-		echo "Waiting for $LOGSTASH_HOST:$LOGSTASH_PORT"
+LOGSTASH_ENABLED=${LOGSTASH_ENABLED:-false}
+LOGSTASH_HOST=${LOGSTASH_HOST:-logstash}
+LOGSTASH_PORT=${LOGSTASH_PORT:-5000}
+HOST_DOMAIN=$(hostname -d)
+LDAP_AUTH=${LDAP_AUTH:-} # Set auth name to enable ldap
+LDAP_HOST=${LDAP_HOST:-ldap}
+LDAP_PORT=${LDAP_PORT:-389}
+LDAP_DOMAIN_CONTEXT=${LDAP_DOMAIN_CONTEXT:-"dc=${HOST_DOMAIN/./,dc=}"}
+LDAP_BASE_DN=${LDAP_BASE_DN:-$LDAP_DOMAIN_CONTEXT}
+LDAP_USER_DN=${LDAP_USER_DN:-"cn=redmine,ou=Special Users,$LDAP_DOMAIN_CONTEXT"}
+LDAP_USER_PW=${LDAP_USER_PW:-Secret123}
+LDAP_FILTER=${LDAP_FILTER:-}
+LDAP_ATTR_LOGIN=${LDAP_ATTR_LOGIN:-cn}
+LDAP_ATTR_FIRSTNAME=${LDAP_ATTR_FIRSTNAME:-givenName}
+LDAP_ATTR_LASTNAME=${LDAP_ATTR_LASTNAME:-sn}
+LDAP_ATTR_MAIL=${LDAP_ATTR_MAIL:-mail}
+LDAP_ONTHEFLY_REGISTER=${LDAP_ONTHEFLY_REGISTER:-t}
+LDAP_TLS=${LDAP_TLS:-f}
+LDAP_TIMEOUT=${LDAP_TIMEOUT:-30}
+SMTP_HOST=${SMTP_HOST:-mail}
+SMTP_PORT=${SMTP_PORT:-25}
+SMTP_DOMAIN=${SMTP_DOMAIN:-$HOST_DOMAIN}
+SMTP_USER=${SMTP_USER:-$(echo "$LDAP_USER_DN" | cut -d , -f 1 | cut -d = -f 2)}
+SMTP_PASSWORD=${SMTP_PASSWORD:-"$LDAP_USER_PW"}
+SMTP_TLS=${SMTP_TLS:-false}
+SMTP_STARTTLS=${SMTP_STARTTLS:-false}
+SMTP_DOMAIN=$(hostname -d)
+DB_ADAPTER=${DB_ADAPTER:-sqlite3}
+DB_ENCODING=${DB_ENCODING:-utf8}
+
+case "$DB_ADAPTER" in
+	postgresql)
+		DB_HOST=${DB_HOST:-postgres}
+		DB_PORT=${DB_PORT:-5432}
+		DB_USERNAME=${DB_USERNAME:-postgres}
+		DB_PASSWORD="$DB_PASSWORD"
+		DB_DATABASE=${DB_DATABASE:-redmine}
+		;;
+	sqlite3)
+		DB_HOST=${DB_HOST:-localhost}
+		DB_USERNAME=${DB_USERNAME:-redmine}
+		DB_DATABASE=${DB_DATABASE:-sqlite/redmine.db}
+		mkdir -p "$(dirname "$DB_DATABASE")" || exit 1
+		chown -R redmine:redmine "$(dirname "$DB_DATABASE")" || exit 1
+		;;
+	*)
+		echo "Unsupported database adapter: '$DB_ADAPTER'" >&2
+		exit 1
+		;;
+esac
+
+waitForService() {
+	until nc -vzw1 "$1" "$2" 2>/dev/null; do
+		echo "Waiting for service $1:$2" >&2
 		sleep 1
 	done
-fi
+}
 
 case "$1" in rails|thin|rake)
-	# Write database.yml if missing
-	if [ ! -f './config/database.yml' ]; then
-		if [ "$POSTGRES_PORT_5432_TCP" ]; then
-			# Configure postgres
-			DB_ADAPTER='postgresql'
-			DB_HOST="${POSTGRES_PORT_5432_TCP_HOST:-postgres}"
-			DB_PORT="${POSTGRES_PORT_5432_TCP_PORT:-5432}"
-			DB_USERNAME="${POSTGRES_ENV_POSTGRES_USER:-postgres}"
-			DB_PASSWORD="${POSTGRES_ENV_POSTGRES_PASSWORD}"
-			DB_DATABASE="${POSTGRES_ENV_POSTGRES_DB:-redmine}"
-			DB_ENCODING=utf8
-		else
-			# Configure sqlite as fallback
-			echo "Warning: Using sqlite since no POSTGRES_PORT_5432_TCP environment variable specified" >&2
-			echo >&2
-			DB_ADAPTER='sqlite3'
-			DB_HOST='localhost'
-			DB_USERNAME='redmine'
-			DB_DATABASE='sqlite/redmine.db'
-			DB_ENCODING=utf8
-			mkdir -p "$(dirname "$DB_DATABASE")"
-			chown -R redmine:redmine "$(dirname "$DB_DATABASE")"
-		fi
+	echo 'Setting up redmine with:'
+	set | grep -E '^DB_|^LOGSTASH_|^LDAP_|^SMTP_' | sed -E 's/(^[^=]+_(PASSWORD|PW)=).+/\1***/i' | xargs -n1 echo ' ' # Show variables
+	[ ! "$DB_ADAPTER" = 'sqlite3' ] || echo 'Warning: Using sqlite3 as redmine database' >&2
 
-		cat > './config/database.yml' <<-YML
-			$RAILS_ENV:
-			  adapter: $DB_ADAPTER
-			  host: $DB_HOST
-			  port: $DB_PORT
-			  username: $DB_USERNAME
-			  password: "$DB_PASSWORD"
-			  database: $DB_DATABASE
-			  encoding: $DB_ENCODING
-		YML
-	fi
+	# Write db config
+	cat > ./config/database.yml <<-YML
+		$RAILS_ENV:
+		  adapter: "$DB_ADAPTER"
+		  host: "$DB_HOST"
+		  port: $DB_PORT
+		  username: "$DB_USERNAME"
+		  password: "$DB_PASSWORD"
+		  database: "$DB_DATABASE"
+		  encoding: "$DB_ENCODING"
+	YML
 
-	# Write configuration.yml if missing
-	if [ ! -f './config/configuration.yml' ]; then
-		cat > './config/configuration.yml' <<-YML
-			$RAILS_ENV:
-			  attachments_storage_path: /redmine/files
-			  email_delivery:
-			    delivery_method: :smtp
-			    smtp_settings:
-			      address: "${SMTP_HOST:-mail}"
-			      port: ${SMTP_PORT:-25}
-			      domain: "${SMTP_DOMAIN:-example.org}"
-			      authentication: :plain
-			      user_name: "${SMTP_USER:-redmine}"
-			      password: "${SMTP_PASSWORD:-redmine}"
-			      tls: ${SMTP_TLS:-false}
-			      enable_starttls_auto: ${SMTP_STARTTLS:-false}
-		YML
-	fi
+	# Write mail config
+	cat > ./config/configuration.yml <<-YML
+		$RAILS_ENV:
+		  attachments_storage_path: /redmine/files
+		  email_delivery:
+			delivery_method: :smtp
+			smtp_settings:
+			  address: "$SMTP_HOST"
+			  port: $SMTP_PORT
+			  domain: "$SMTP_DOMAIN"
+			  authentication: :plain
+			  user_name: "$SMTP_USER"
+			  password: "$SMTP_PASSWORD"
+			  tls: $SMTP_TLS
+			  enable_starttls_auto: $SMTP_STARTTLS
+	YML
+
+	# TODO: Write log config
+#	cat > .config/additional_environment.yml <<-YML
+#		config.log_level = :error
+#	YML
 
 	# Ensure the right database adapter is active in Gemfile.lock
 	bundle install --without development test || exit 1
@@ -83,7 +114,8 @@ case "$1" in rails|thin|rake)
 
 	# Wait for DB to become available
 	until ERROR=$(echo "SELECT 1;" | gosu redmine rails db -p 2>&1); do
-		echo "Waiting for $DB_ADAPTER://$DB_USERNAME@$DB_HOST:$DB_PORT/$DB_DATABASE to become available: $ERROR"
+		echo "Waiting for database $DB_ADAPTER://$DB_USERNAME@$DB_HOST:$DB_PORT/$DB_DATABASE: $ERROR"
+		ERROR=
 		sleep 1
 	done
 
@@ -116,7 +148,7 @@ case "$1" in rails|thin|rake)
 		echo "$WORKFLOW_SQL" | gosu redmine rails db -p | grep -Eo '\d+\s*\|\s*\d+\s*\|\s*\d+\s*\|\s*\d+' | \
 			sed -e 's/\|/,/g' -e 's/ //g' -e 's/$/);/' | \
 			xargs -n1 echo "INSERT INTO workflows(type,assignee,author,tracker_id,role_id,old_status_id,new_status_id) VALUES('WorkflowTransition','f','f'," | \
-			gosu redmine rails db -p ||
+			gosu redmine rails db -p 1>/dev/null ||
 		(echo "Failed to copy 'Feature' tracker workflow to 'Task' tracker workflow. You may have to create the workflow yourself to be able to interact with a backlogs task board" >&2; exit 7)
 	elif [ -z "$REDMINE_NO_DB_MIGRATE" ]; then # Migrate
 		gosu redmine rake redmine:plugins:migrate || exit 8
@@ -134,44 +166,28 @@ case "$1" in rails|thin|rake)
 			exit 9
 		fi
 
-		echo "INSERT INTO settings(name,value) VALUES('host_name','$HOST_NAME');" | gosu redmine rails db -p
+		echo "INSERT INTO settings(name,value) VALUES('host_name','$HOST_NAME');" | gosu redmine rails db -p 1>/dev/null
 	fi
 
 	# Configure LDAP
-	if [ ! -z "$LDAP_AUTH" ]; then
+	if [ "$LDAP_AUTH" ]; then
 		echo "Configuring LDAP auth source '$LDAP_AUTH'. Disable this by setting LDAP_AUTH=''"
-		HOST_DOMAIN=$(hostname -d)
-		LDAP_HOST=${LDAP_HOST:-ldap}
-		LDAP_PORT=${LDAP_PORT:-389}
-		LDAP_DOMAIN_CONTEXT=${LDAP_DOMAIN_CONTEXT:-"dc=${HOST_DOMAIN/./,dc=}"}
-		LDAP_BASE_DN=${LDAP_BASE_DN:-$LDAP_DOMAIN_CONTEXT}
-		LDAP_ACCOUNT=${LDAP_USER_DN:-"cn=redmine,ou=Special Users,$LDAP_DOMAIN_CONTEXT"}
-		LDAP_ACCOUNT_PASSWORD=${LDAP_USER_PW:-Secret123}
-		LDAP_FILTER=${LDAP_FILTER:-}
-		LDAP_ATTR_LOGIN=${LDAP_ATTR_LOGIN:-cn}
-		LDAP_ATTR_FIRSTNAME=${LDAP_ATTR_FIRSTNAME:-givenName}
-		LDAP_ATTR_LASTNAME=${LDAP_ATTR_LASTNAME:-sn}
-		LDAP_ATTR_MAIL=${LDAP_ATTR_MAIL:-mail}
-		LDAP_ONTHEFLY_REGISTER=${LDAP_ONTHEFLY_REGISTER:-t}
-		LDAP_TLS=${LDAP_TLS:-f}
-		LDAP_TIMEOUT=${LDAP_TIMEOUT:-30}
-		set | grep -E '^LDAP_' | sed -E 's/(^[^=]+_(PASSWORD|PW)=).*/\1***/i' # Show variables
 
 		if ! echo "SELECT 'auth:'||name FROM auth_sources WHERE name='$LDAP_AUTH';" | rails db -p | grep -qw "auth:$LDAP_AUTH"; then
 			# Insert auth source if unconfigured
 			echo "INSERT INTO auth_sources(type,name,host,port,account,account_password,base_dn,filter,attr_login,attr_mail,attr_firstname,attr_lastname,onthefly_register,tls,timeout)
 					VALUES('AuthSourceLdap','$LDAP_AUTH','$LDAP_HOST',$LDAP_PORT,
-						'$LDAP_ACCOUNT','$LDAP_ACCOUNT_PASSWORD','$LDAP_BASE_DN',
+						'$LDAP_USER_DN','$LDAP_USER_PW','$LDAP_BASE_DN',
 						'$LDAP_FILTER','$LDAP_ATTR_LOGIN','$LDAP_ATTR_MAIL',
 						'$LDAP_ATTR_FIRSTNAME','$LDAP_ATTR_LASTNAME',
-						'$LDAP_ONTHEFLY_REGISTER','$LDAP_TLS',$LDAP_TIMEOUT);" | gosu redmine rails db -p ||
+						'$LDAP_ONTHEFLY_REGISTER','$LDAP_TLS',$LDAP_TIMEOUT);" | gosu redmine rails db -p 1>/dev/null ||
 				(echo "Failed to insert LDAP auth source $LDAP_AUTH"; exit 10)
 		else
 			# Update existing auth source
 			echo "UPDATE auth_sources SET type='AuthSourceLdap',
 					host='$LDAP_HOST',port=$LDAP_PORT,
-					account='$LDAP_ACCOUNT',
-					account_password='$LDAP_ACCOUNT_PASSWORD',
+					account='$LDAP_USER_DN',
+					account_password='$LDAP_USER_PW',
 					base_dn='$LDAP_BASE_DN',
 					filter='$LDAP_FILTER',
 					attr_login='$LDAP_ATTR_LOGIN',
@@ -180,7 +196,7 @@ case "$1" in rails|thin|rake)
 					attr_lastname='$LDAP_ATTR_LASTNAME',
 					onthefly_register='$LDAP_ONTHEFLY_REGISTER',
 					tls='$LDAP_TLS',timeout=$LDAP_TIMEOUT
-					WHERE name='$LDAP_AUTH';" | gosu redmine rails db -p ||
+					WHERE name='$LDAP_AUTH';" | gosu redmine rails db -p 1>/dev/null ||
 				(echo "Failed to update LDAP auth source $LDAP_AUTH_NAME"; exit 11)
 		fi
 
@@ -190,21 +206,26 @@ require 'net/ldap'
 ldap = Net::LDAP.new
 ldap.host = '$LDAP_HOST'
 ldap.port = $LDAP_PORT
-ldap.auth '$LDAP_ACCOUNT', '$LDAP_ACCOUNT_PASSWORD'
+ldap.auth '$LDAP_USER_DN', '$LDAP_USER_PW'
 ldap.bind
-ldap.search( :base => '$LDAP_ACCOUNT' ) do |entry|
+ldap.search( :base => '$LDAP_USER_DN' ) do |entry|
+  print 'found'
   exit 0
 end
 exit 1
 "
 		until echo "$LDAP_CHECK" | ruby; do
-			echo "Waiting for available LDAP server $LDAP_HOST:$LDAP_PORT and user $LDAP_ACCOUNT" >&2
+			echo "Waiting for available LDAP server $LDAP_HOST:$LDAP_PORT and user $LDAP_USER_DN" >&2
 			sleep 1
 		done
 	fi
 
 	chown -R redmine:redmine files log public/plugin_assets
 	rm -f tmp/pids/server.pid
+
+	# Wait for depending services
+	[ ! "$LOGSTASH_ENABLED" = 'true' ] || waitForService "$LOGSTASH_HOST" "$LOGSTASH_PORT"
+	#waitForService "$SMTP_HOST" "$SMTP_PORT"
 
 	set -- gosu redmine "$@"
 	;;

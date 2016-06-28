@@ -5,5 +5,7 @@ services:
     hostname: ldap.algorythm.de
     ports:
       - "389:389"
-    volumes:
-      - "./data:/var/lib/dirsrv"
+    environment:
+      LDAP_ROOT_DN_PWD: "${LDAP_ROOT_DN_PWD}"
+#    volumes:
+#      - "./data:/var/lib/dirsrv"

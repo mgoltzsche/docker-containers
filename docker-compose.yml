@@ -79,6 +79,8 @@ services:
     extends:
       file: redmine/docker-compose.yml
       service: redmine
+    environment:
+      LOGSTASH_ENABLED: "true"
     depends_on:
       - postgres
     links:

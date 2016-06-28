@@ -76,5 +76,7 @@ services:
     hostname: postgres
     ports:
       - "5432:5432"
+    environment:
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
     volumes:
       - "./postgres-add-users-and-dbs.sh:/docker-entrypoint-initdb.d/add-users-and-dbs.sh"

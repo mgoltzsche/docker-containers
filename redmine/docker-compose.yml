@@ -12,24 +12,27 @@ services:
 #      - "./data:/var/lib/dirsrv"
   postgres:
     extends:
-      file: ../postgres/docker-compose.yml
+      file: ../common.yml
       service: postgres
     environment:
-      POSTGRES_PASSWORD: "${POSTGRES_PASSWORD}"
       PG_USER_REDMINE: "${REDMINE_POSTGRES_PASSWORD}"
   redmine:
     image: algorythm/redmine-backlogs:latest
     hostname: redmine.algorythm.de
     environment:
-      POSTGRES_PORT_5432_TCP: "true"
-      POSTGRES_ENV_POSTGRES_USER: redmine
-      POSTGRES_ENV_POSTGRES_PASSWORD: "${REDMINE_POSTGRES_PASSWORD}"
+      DB_ADAPTER: "postgresql"
+      DB_USERNAME: redmine
+      DB_PASSWORD: "${REDMINE_POSTGRES_PASSWORD}"
       LDAP_AUTH: "ldap-default"
       LDAP_USER_DN: "${REDMINE_LDAP_USER_DN}"
       LDAP_USER_PW: "${REDMINE_LDAP_USER_PW}"
     ports:
       - "3000:3000"
+#    volumes:
+#      - "./data:/redmine/files"
 #    depends_on:
 #      - postgres
+#      - ldap
 #    links:
 #      - postgres
+#      - ldap

@@ -43,7 +43,7 @@ setupDirsrvInstance() {
 			exit 1
 		fi
 
-		echo "Installing LDAP server instance with:$(echo '';set | grep -E '^LDAP_' | sed -E 's/(^[^=]+_PWD=).+/\1***/' | grep -Ev '^LDAP_USER_')"
+		echo "Installing LDAP server instance with:$(echo '';set | grep -E '^LDAP_' | sed -E 's/(^[^=]+_PWD=).+/\1***/' | grep -Ev '^LDAP_USER_' | xargs -n1 echo ' ')"
 		echo > "$LDAP_INSTALL_INF_FILE" "
 [General]
 FullMachineName= $FULL_MACHINE_NAME
@@ -73,7 +73,6 @@ InstallLdifFile= $LDAP_INSTALL_LDIF_FILE
 	rm -rf /tmp/ds-config.inf 2>/dev/null
 }
 
-# TODO: finish system user setup: master password reset
 setupSystemUsers() {
 	LDAP_USERS="$(set | grep -Eo '^LDAP_USER_DN_[^=]+' | sed 's/^LDAP_USER_DN_//')" # prevent user created from LDAP_USER_*_PASSWORD var
 
@@ -83,9 +82,10 @@ setupSystemUsers() {
 		for LDAP_USER_KEY in "$LDAP_USERS"; do
 			LDAP_USER_DN=$(eval "echo \$LDAP_USER_DN_$LDAP_USER_KEY")
 			LDAP_USER_PASSWORD=$(eval "echo \$LDAP_USER_PW_$LDAP_USER_KEY")
+			LDAP_USER_PW_HASH=$(encodeLdapPassword "$LDAP_USER_PASSWORD")
 			LDAP_USER_PREFIX=$(echo "$LDAP_USER_DN" | grep -Pio '^[a-z]+=[a-z0-9_\- ]+(?=,)' | sed 's/=/: /')
 			LDAP_USER_EMAIL=$(eval "echo \$LDAP_USER_EMAIL_$LDAP_USER_KEY")
-			LDAP_USER_EMAIL=${LDAP_USER_EMAIL:-$(echo "$LDAP_USER_PREFIX" | grep -Po '(?<==).*')"@service.$LDAP_ADMIN_DOMAIN"}
+			LDAP_USER_EMAIL=${LDAP_USER_EMAIL:-$(echo "$LDAP_USER_PREFIX" | grep -Po '(?<=: ).*')"@service.$LDAP_ADMIN_DOMAIN"}
 
 			if [ ! "$LDAP_USER_DN" ]; then
 				echo "No LDAP user DN defined for $LDAP_USER_KEY" >&2
@@ -117,7 +117,8 @@ objectClass: mailRecipient
 $LDAP_USER_PREFIX
 mail: $LDAP_USER_EMAIL
 mailForwardingAddress: max.goltzsche@algorythm.de
-userPassword:: $(encodeLdapPassword '$LDAP_USER_PASSWORD')"
+userPassword:: $LDAP_USER_PW_HASH
+"
 				if ! echo "$LDIF" | ldapadd $LDAP_OPTS; then
 					echo "$LDIF" >&2
 					exit 1
@@ -130,7 +131,8 @@ userPassword:: $(encodeLdapPassword '$LDAP_USER_PASSWORD')"
 dn: $LDAP_USER_DN
 changetype: modify
 replace: userPassword
-userPassword:: $(encodeLdapPassword '$LDAP_USER_PASSWORD')"
+userPassword:: $LDAP_USER_PW_HASH
+"
 				if ! echo "$LDIF" | ldapmodify $LDAP_OPTS; then
 					echo "$LDIF" >&2
 					exit 1
@@ -147,7 +149,7 @@ encodeLdapPassword() {
 
 waitForService() {
 	until timeout 1 bash -c "</dev/tcp/$1/$2" 2>/dev/null; do
-		echo "Waiting for service $1:$2 to become available"
+		echo "Waiting for service $1:$2"
 		sleep 1
 	done
 }
