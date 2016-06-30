@@ -20,16 +20,24 @@ services:
       - elasticsearch
     links:
       - elasticsearch
-  ldap:
-    image: algorythm/389ds:latest
-    hostname: ldap.algorythm.de
-    environment:
-      LOGSTASH_ENABLED: "true"
+  redmine:
+    image: algorythm/redmine-backlogs:latest
+    hostname: redmine.algorythm.de
     ports:
-      - "389:389"
-    depends_on:
-      - logstash
-    links:
-      - logstash
+      - "3000:3000"
+    environment:
+      SYSLOG_ENABLED: "true"
+      SYSLOG_PORT: 10514
+#  ldap:
+#    image: algorythm/389ds:latest
+#    hostname: ldap.algorythm.de
+#    environment:
+#      LOGSTASH_ENABLED: "true"
+#    ports:
+#      - "389:389"
+#    depends_on:
+#      - logstash
+#    links:
+#      - logstash
 #    volumes:
 #      - "./data:/var/lib/dirsrv"

@@ -25,3 +25,6 @@ sh:
 join:
 	# Execute interactive shell on running container
 	docker exec -it `docker ps | grep redmine-backlogs | cut -d ' ' -f 1` /bin/sh
+
+kill:
+	docker kill `docker ps | grep algorythm/redmine | cut -d ' ' -f 1`

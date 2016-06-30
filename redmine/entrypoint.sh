@@ -1,8 +1,9 @@
 #!/bin/sh
 
-LOGSTASH_ENABLED=${LOGSTASH_ENABLED:-false}
-LOGSTASH_HOST=${LOGSTASH_HOST:-logstash}
-LOGSTASH_PORT=${LOGSTASH_PORT:-5000}
+export LOG_LEVEL=${LOG_LEVEL:-ERROR}
+export SYSLOG_ENABLED=${SYSLOG_ENABLED:-false}
+export SYSLOG_HOST=${SYSLOG_HOST:-logstash}
+export SYSLOG_PORT=${SYSLOG_PORT:-514}
 HOST_DOMAIN=$(hostname -d)
 LDAP_AUTH=${LDAP_AUTH:-} # Set auth name to enable ldap
 LDAP_HOST=${LDAP_HOST:-ldap}
@@ -51,16 +52,23 @@ case "$DB_ADAPTER" in
 		;;
 esac
 
-waitForService() {
-	until nc -vzw1 "$1" "$2" 2>/dev/null; do
-		echo "Waiting for service $1:$2" >&2
-		sleep 1
+waitForTcpService() {
+	until nc -zvw1 "$1" "$2" 2>/dev/null; do
+		echo "Waiting for TCP service $1:$2" >&2
+		sleep 3
+	done
+}
+
+waitForUdpService() {
+	until nc -uzvw1 "$1" "$2" 2>/dev/null; do
+		echo "Waiting for UDP service $1:$2" >&2
+		sleep 3
 	done
 }
 
 case "$1" in rails|thin|rake)
 	echo 'Setting up redmine with:'
-	set | grep -E '^DB_|^LOGSTASH_|^LDAP_|^SMTP_' | sed -E 's/(^[^=]+_(PASSWORD|PW)=).+/\1***/i' | xargs -n1 echo ' ' # Show variables
+	set | grep -E '^DB_|^LOG_LEVEL=|^SYSLOG_|^LDAP_|^SMTP_' | sed -E 's/(^[^=]+_(PASSWORD|PW)=).+/\1***/i' | xargs -n1 echo ' ' # Show variables
 	[ ! "$DB_ADAPTER" = 'sqlite3' ] || echo 'Warning: Using sqlite3 as redmine database' >&2
 
 	# Write db config
@@ -92,10 +100,19 @@ case "$1" in rails|thin|rake)
 			  enable_starttls_auto: $SMTP_STARTTLS
 	YML
 
-	# TODO: Write log config
-#	cat > .config/additional_environment.yml <<-YML
-#		config.log_level = :error
-#	YML
+	# Write log config
+	cat > ./config/additional_environment.rb <<-YML
+		if ENV['SYSLOG_ENABLED'] == 'true'
+			config.logger = RemoteSyslogLogger.new(ENV['SYSLOG_HOST'], ENV['SYSLOG_PORT'], :program => 'redmine')
+		else
+			config.logger = Logger.new(STDOUT)
+		end
+
+		config.logger.level = Logger::$LOG_LEVEL
+	YML
+
+	# Wait for syslog server
+	[ ! "$SYSLOG_ENABLED" = 'true' ] || waitForUdpService "$SYSLOG_HOST" "$SYSLOG_PORT"
 
 	# Ensure the right database adapter is active in Gemfile.lock
 	bundle install --without development test || exit 1
@@ -223,9 +240,8 @@ exit 1
 	chown -R redmine:redmine files log public/plugin_assets
 	rm -f tmp/pids/server.pid
 
-	# Wait for depending services
-	[ ! "$LOGSTASH_ENABLED" = 'true' ] || waitForService "$LOGSTASH_HOST" "$LOGSTASH_PORT"
-	#waitForService "$SMTP_HOST" "$SMTP_PORT"
+	# Wait for mail server
+	#waitForTcpService "$SMTP_HOST" "$SMTP_PORT"
 
 	set -- gosu redmine "$@"
 	;;

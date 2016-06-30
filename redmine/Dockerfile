@@ -57,7 +57,7 @@ RUN set -x \
 	&& rm redmine-backlogs-plugin.tar.gz \
 	&& chown -R redmine:redmine /redmine
 
-# Install
+# Install gems
 WORKDIR /redmine
 RUN NOKOGIRI_VERSION=$(cat /redmine/Gemfile /redmine/plugins/*/Gemfile 2>/dev/null | grep 'gem "nokogiri"' | grep -Eo '([<=>]+ ?)?[0-9\.]+' | sort | head -n1) \
 	BUILD_DEPS='\
@@ -74,6 +74,7 @@ RUN NOKOGIRI_VERSION=$(cat /redmine/Gemfile /redmine/plugins/*/Gemfile 2>/dev/nu
 	&& apk add --no-cache --update $BUILD_DEPS \
 	&& set -ex \
 	&& gem install nokogiri -v "$NOKOGIRI_VERSION" -- --use-system-libraries \
+	&& echo 'gem "remote_syslog_logger", "~> 1.0.3"' >> Gemfile \
 	&& bundle install --without development test \
 	&& for adapter in postgresql sqlite3; do \
 		echo "$RAILS_ENV:" > ./config/database.yml; \
@@ -84,16 +85,8 @@ RUN NOKOGIRI_VERSION=$(cat /redmine/Gemfile /redmine/plugins/*/Gemfile 2>/dev/nu
 	&& apk del --purge $BUILD_DEPS \
 	&& chown -R redmine:redmine /redmine
 
-# Disable card labels
+# Disable backlog card labels
 RUN echo '--- {}' > plugins/redmine_backlogs/lib/labels/labels.yaml
-
-# Configure logging using stdout
-RUN for ENVIRONMENT in production development; do \
-		sed -i $'/RedmineApp::Application.configure/a \
-			config.logger = Logger.new(STDOUT)\\\n\
-			config.logger.level = Logger::INFO' \
-			config/environments/$ENVIRONMENT.rb; \
-	done
 
 VOLUME /redmine/files
 EXPOSE 3000
