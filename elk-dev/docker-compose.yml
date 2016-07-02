@@ -20,14 +20,23 @@ services:
       - elasticsearch
     links:
       - elasticsearch
-  redmine:
-    image: algorythm/redmine-backlogs:latest
-    hostname: redmine.algorythm.de
-    ports:
-      - "3000:3000"
+  mail:
+    extends:
+      file: ../mail/docker-compose.yml
+      service: mail
     environment:
+      LDAP_STARTUP_CHECK_ENABLED: 'false'
       SYSLOG_ENABLED: "true"
-      SYSLOG_PORT: 10514
+      SYSLOG_HOST: "logstash"
+      SYSLOG_PORT: 1025
+#  redmine:
+#    image: algorythm/redmine-backlogs:latest
+#    hostname: redmine.algorythm.de
+#    ports:
+#      - "3000:3000"
+#    environment:
+#      SYSLOG_ENABLED: "true"
+#      SYSLOG_PORT: 10514
 #  ldap:
 #    image: algorythm/389ds:latest
 #    hostname: ldap.algorythm.de

@@ -2,9 +2,9 @@
 
 DOMAIN=$(hostname -d)
 CERTIFICATE_NAME='server' # TODO: if this is dynamic a template for dovecot.conf is required
-LOGSTASH_ENABLED=${LOGSTASH_ENABLED:=false}
-LOGSTASH_HOST=${LOGSTASH_HOST:=logstash}
-LOGSTASH_PORT=${LOGSTASH_PORT:=5000}
+SYSLOG_ENABLED=${SYSLOG_ENABLED:=false}
+SYSLOG_HOST=${SYSLOG_HOST:=logstash}
+SYSLOG_PORT=${SYSLOG_PORT:=514}
 LDAP_SUFFIX=${LDAP_SUFFIX:='dc='$(echo -n "$DOMAIN" | sed s/\\./,dc=/g)}
 LDAP_HOST=${LDAP_HOST:=ldap}
 LDAP_PORT=${LDAP_PORT:=389}
@@ -25,6 +25,15 @@ fi
 echo 'Configuring mailing with:'
 set | grep -E '^DOMAIN=|^LOGSTASH_|^CERTIFICATE_NAME=|^LDAP_' | sed -E 's/(^[^=]+_(PASSWORD|PW)=).+/\1***/i' | xargs -n1 echo ' ' # Show variables
 
+awaitSuccess() {
+	MSG="$1"
+	shift
+	until $@; do
+		echo "$MSG" >&2
+		sleep 1
+	done
+}
+
 setupSslCertificate() {
 	# Generate SSL certificate if not available
 	if [ -f "/etc/ssl/private/$CERTIFICATE_NAME.key" ]; then
@@ -41,14 +50,11 @@ setupSslCertificate() {
 }
 
 setupRsyslog() {
-	# Wait until logstash is running to capture log
-	RSYSLOG_LOGSTASH_CFG=
-	if [ "$LOGSTASH_ENABLED" = 'true' ]; then
-		until nc -vzw1 "$LOGSTASH_HOST" "$LOGSTASH_PORT" 2>/dev/null; do
-			echo "Waiting for service $LOGSTASH_HOST:$LOGSTASH_PORT"
-			sleep 1
-		done
-		RSYSLOG_LOGSTASH_CFG="*.* @$LOGSTASH_HOST:$LOGSTASH_PORT"
+	# Wait until syslog server is available to capture log
+	RSYSLOG_REMOTE_CFG=
+	if [ "$SYSLOG_ENABLED" = 'true' ]; then
+		awaitSuccess "Waiting for syslog UDP server $SYSLOG_HOST:$SYSLOG_PORT" nc -uzvw1 "$SYSLOG_HOST" "$SYSLOG_PORT" 2>/dev/null
+		RSYSLOG_REMOTE_CFG="*.* @$SYSLOG_HOST:$SYSLOG_PORT"
 	fi
 
 	# /etc/rsyslog: http://www.rsyslog.com/doc/
@@ -58,7 +64,7 @@ setupRsyslog() {
 \$ModLoad omstdout.so # provides messages to stdout
 
 *.* :omstdout: # send everything to stdout
-$RSYSLOG_LOGSTASH_CFG
+$RSYSLOG_REMOTE_CFG
 EOF
 	[ $? -eq 0 ] || exit 1
 	chmod 444 /etc/rsyslog.conf || exit 1
@@ -70,11 +76,11 @@ setupPostfix() {
 	LDAP_MAILBOX_QUERY='(&(objectClass=inetOrgPerson)(|(mail=%s)(mailAlternateAddress=%s)))'
 
 	echo "Configuring postfix ..."
-	MAIN_CF_TPL="$(cat /etc/postfix/main.cf.tpl)" &&
 	mkdir -p /etc/postfix/ldap &&
 	chmod 00755 /etc/postfix/ldap &&
-	# Render main postfix configuration file with actual hostname
-	echo "${MAIN_CF_TPL/\$\{MACHINE_FQN\}/$(hostname -f)}" > /etc/postfix/main.cf &&
+	chmod 644 /etc/postfix/main.cf &&
+	# Set hostname in main.cf
+	sed -Ei 's/^myhostname\s*=.*$/myhostname = mail.algorythm.dex/' /etc/postfix/main.cf &&
 	# Generate postfix LDAP configuration files
 	cd /etc/postfix/ldap &&
 	postfixLdapConf virtual_domains.cf   "$LDAP_DOMAIN_SEARCH_BASE"  "$LDAP_DOMAIN_QUERY"  "$LDAP_DOMAIN_ATTR" &&
@@ -140,6 +146,7 @@ startSyslog() {
 	export SYSLOGD="-m ${SYSLOG_MARK_INTERVAL:-60}" # Set syslog -- Mark -- interval in minutes (useful for health check)
 	rsyslogd -n -f /etc/rsyslog.conf &
 	SYSLOG_PID=$!
+	awaitSuccess 'Waiting for local rsyslog' [ -S /dev/log ]
 }
 
 startPostfix() {
@@ -153,13 +160,12 @@ startDovecot() {
 	/usr/sbin/dovecot -c "$DOVECOT_CONF"
 }
 
+processTerminated() {
+	ps -o pid | grep -qv ${1:-0}
+}
+
 awaitTermination() {
-	if [ ! -z "$1" ]; then
-		# Wait until process has been terminated
-		while [ $(ps -ef | grep -Ec "^\s*$1 ") -ne 0 ]; do
-			sleep 1
-		done
-	fi
+	awaitSuccess "Waiting for pid $1 to terminate" processTerminated $1
 }
 
 terminateGracefully() {
@@ -182,6 +188,9 @@ trap terminateGracefully SIGHUP SIGINT SIGQUIT SIGTERM
 if [ "$1" = 'run' ]; then
 	setup
 	startSyslog
+	if [ ! "$LDAP_STARTUP_CHECK_ENABLED" = 'false' ]; then
+		awaitSuccess "Waiting for LDAP server $LDAP_HOST:$LDAP_PORT" nc -zvw1 "$LDAP_HOST" "$LDAP_PORT"
+	fi
 	startPostfix
 	startDovecot
 	wait

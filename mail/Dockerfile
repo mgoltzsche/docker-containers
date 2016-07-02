@@ -64,7 +64,7 @@ EXPOSE 25 465 587
 EXPOSE 110 143 993 995
 
 # Add custom configuration
-ADD postfix-main.cf.tpl /etc/postfix/main.cf.tpl
+ADD postfix-main.cf /etc/postfix/main.cf
 ADD dovecot.conf /etc/dovecot/dovecot.conf
 
 ENV SERVICE_25_CHECK_SCRIPT nc -vzw1 $SERVICE_IP $SERVICE_PORT || exit 2
@@ -74,7 +74,6 @@ ENV SERVICE_110_CHECK_INTERVAL 15s
 
 # Configure entrypoint
 ADD entrypoint.sh /
-RUN chmod 444 /etc/postfix/main.cf.tpl \
-	&& chown root:root /var/spool/postfix /var/spool/postfix/pid
+RUN chown root:root /var/spool/postfix /var/spool/postfix/pid
 ENTRYPOINT ["tini", "--", "/entrypoint.sh"]
 CMD ["run"]

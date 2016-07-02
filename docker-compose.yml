@@ -67,7 +67,9 @@ services:
       file: mail/docker-compose.yml
       service: mail
     environment:
-      LOGSTASH_ENABLED: "true"
+      SYSLOG_ENABLED: "true"
+      SYSLOG_HOST: "logstash"
+      SYSLOG_PORT: 1025
   postgres:
     extends:
       file: common.yml

@@ -22,7 +22,7 @@ readme_directory = no
 queue_directory = /var/spool/postfix
 
 alias_maps=hash:/etc/aliases
-myhostname = ${MACHINE_FQN}
+myhostname = mail.example.org
 mydestination = localhost, $myhostname
 mynetworks = 127.0.0.0/8 [::ffff:127.0.0.0]/104 [::1]/128
 relayhost =
@@ -32,6 +32,7 @@ inet_interfaces = all
 inet_protocols = ipv4
 home_mailbox = Maildir/
 
+# LDAP configuration files generated in entrypoint.sh
 virtual_alias_maps = "ldap:/etc/postfix/ldap/virtual_aliases.cf"
 virtual_mailbox_domains = "ldap:/etc/postfix/ldap/virtual_domains.cf"
 virtual_mailbox_maps = "ldap:/etc/postfix/ldap/virtual_mailboxes.cf"
