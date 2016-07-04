@@ -29,7 +29,6 @@ setupPostgres() {
 
 	# Start postgres locally for user and DB setup or migration
 	gosu postgres postgres -c listen_addresses=localhost &
-	#POSTGRES_PID=$!
 
 	# Wait for postgres start
 	awaitSuccess 'Waiting for local postgres to start before setup' isPostgresStarted $!
@@ -82,15 +81,18 @@ setupPostgres() {
 }
 
 startRsyslog() {
-	# Wait until syslog server is available to capture log
-	awaitSuccess "Waiting for syslog UDP server $SYSLOG_HOST:$SYSLOG_PORT" nc -uzvw1 "$SYSLOG_HOST" "$SYSLOG_PORT"
+	SYSLOG_REMOTE_CFG=
+	if [ "$SYSLOG_ENABLED" = 'true' ]; then
+		awaitSuccess "Waiting for syslog UDP server $SYSLOG_HOST:$SYSLOG_PORT" nc -uzvw1 "$SYSLOG_HOST" "$SYSLOG_PORT"
+		SYSLOG_REMOTE_CFG="*.* @$SYSLOG_HOST:$SYSLOG_PORT"
+	fi
 
 	cat > /etc/rsyslog.conf <<-EOF
 		\$ModLoad imuxsock.so # provides support for local system logging (e.g. via logger command)
 		\$ModLoad omstdout.so # provides messages to stdout
 
 		*.* :omstdout: # send everything to stdout
-		*.* @$SYSLOG_HOST:$SYSLOG_PORT
+		$SYSLOG_REMOTE_CFG
 	EOF
 	[ $? -eq 0 ] || exit 1
 	chmod 444 /etc/rsyslog.conf || exit 1
@@ -142,8 +144,8 @@ isPostgresSpawned() {
 trap terminateGracefully SIGHUP SIGINT SIGQUIT SIGTERM
 
 if [ "$1" = 'postgres' ]; then
+	startRsyslog
 	setupPostgres
-	[ ! "$SYSLOG_ENABLED" = 'true' ] || startRsyslog
 	(
 		gosu postgres $@
 		terminateRsyslog

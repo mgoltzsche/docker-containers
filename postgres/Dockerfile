@@ -32,6 +32,7 @@ RUN set -x \
 
 # Modify default configuration
 RUN sed -Ei "s/^#?(listen_addresses) ?=.*/\1 = '*'/" /usr/share/postgresql/postgresql.conf.sample \
+	&& echo 'log_destination=syslog' >> /usr/share/postgresql/postgresql.conf.sample \
 	&& echo "host all  all    0.0.0.0/0  md5" >> /usr/share/postgresql/pg_hba.conf.sample
 
 EXPOSE 5432
