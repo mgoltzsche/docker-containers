@@ -1,7 +1,7 @@
 #!/bin/sh
 
 DOMAIN=$(hostname -d)
-CERTIFICATE_NAME='server' # TODO: if this is dynamic a template for dovecot.conf is required
+CERTIFICATE_NAME='server' # TODO: if this is dynamic the values in postfix/dovecot config have to be adjusted dynamically
 SYSLOG_ENABLED=${SYSLOG_ENABLED:=false}
 SYSLOG_HOST=${SYSLOG_HOST:=logstash}
 SYSLOG_PORT=${SYSLOG_PORT:=514}
@@ -57,15 +57,14 @@ setupRsyslog() {
 		RSYSLOG_REMOTE_CFG="*.* @$SYSLOG_HOST:$SYSLOG_PORT"
 	fi
 
-	# /etc/rsyslog: http://www.rsyslog.com/doc/
-	cat > /etc/rsyslog.conf <<EOF
-\$ModLoad immark.so # provides --MARK-- message capability
-\$ModLoad imuxsock.so # provides support for local system logging (e.g. via logger command)
-\$ModLoad omstdout.so # provides messages to stdout
+	cat > /etc/rsyslog.conf <<-EOF
+		\$ModLoad immark.so # provides --MARK-- message capability
+		\$ModLoad imuxsock.so # provides support for local system logging (e.g. via logger command)
+		\$ModLoad omstdout.so # provides messages to stdout
 
-*.* :omstdout: # send everything to stdout
-$RSYSLOG_REMOTE_CFG
-EOF
+		*.* :omstdout: # send everything to stdout
+		$RSYSLOG_REMOTE_CFG
+	EOF
 	[ $? -eq 0 ] || exit 1
 	chmod 444 /etc/rsyslog.conf || exit 1
 }
@@ -92,17 +91,17 @@ setupPostfix() {
 }
 
 postfixLdapConf() {
-	cat > "$1" <<EOF
-# Postfix LDAP query
-server_host = $LDAP_HOST
-server_port = $LDAP_PORT
-bind_dn = $LDAP_USER_DN
-bind_pw = $LDAP_USER_PW
-bind = yes
-search_base = $2
-query_filter = $3
-result_attribute = $4
-EOF
+	cat > "$1" <<-EOF
+		# Postfix LDAP query
+		server_host = $LDAP_HOST
+		server_port = $LDAP_PORT
+		bind_dn = $LDAP_USER_DN
+		bind_pw = $LDAP_USER_PW
+		bind = yes
+		search_base = $2
+		query_filter = $3
+		result_attribute = $4
+	EOF
 	test $? -eq 0 &&
 	chmod 640 "$1" &&
 	chown root:postfix "$1"
@@ -111,21 +110,21 @@ EOF
 setupDovecot() {
 	echo "Configuring dovecot ..."
 	# Generate dovecot LDAP configuration
-	cat > /etc/dovecot/dovecot-ldap.conf.ext <<EOF
-# Dovecot LDAP mailbox resultion query (included in /etc/dovecot.conf)
-hosts = $LDAP_HOST:$LDAP_PORT
-dn = $LDAP_USER_DN
-dnpass = $LDAP_USER_PW
-tls = no
-auth_bind = yes
-base = $LDAP_MAILBOX_SEARCH_BASE
-user_attrs = =mail=maildir:/var/vmail/%d/%n/
-user_filter = (&(objectClass=inetOrgPerson)(mail=%u))
-pass_attrs = 
-pass_filter = (&(objectClass=inetOrgPerson)(mail=%u))
-scope = subtree
-ldap_version = 3
-EOF
+	cat > /etc/dovecot/dovecot-ldap.conf.ext <<-EOF
+		# Dovecot LDAP mailbox resultion query (included in /etc/dovecot.conf)
+		hosts = $LDAP_HOST:$LDAP_PORT
+		dn = $LDAP_USER_DN
+		dnpass = $LDAP_USER_PW
+		tls = no
+		auth_bind = yes
+		base = $LDAP_MAILBOX_SEARCH_BASE
+		user_attrs = =mail=maildir:/var/vmail/%d/%n/
+		user_filter = (&(objectClass=inetOrgPerson)(mail=%u))
+		pass_attrs = 
+		pass_filter = (&(objectClass=inetOrgPerson)(mail=%u))
+		scope = subtree
+		ldap_version = 3
+	EOF
 	test $? -eq 0 &&
 	chmod 600 /etc/dovecot/dovecot-ldap.conf.ext &&
 	# Link ldap conf as user db
@@ -161,7 +160,7 @@ startDovecot() {
 }
 
 processTerminated() {
-	ps -o pid | grep -qv ${1:-0}
+	! ps -o pid | grep -q ${1:-0}
 }
 
 awaitTermination() {

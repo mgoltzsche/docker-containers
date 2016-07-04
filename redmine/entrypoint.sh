@@ -103,9 +103,9 @@ case "$1" in rails|thin|rake)
 	# Write log config
 	cat > ./config/additional_environment.rb <<-YML
 		if ENV['SYSLOG_ENABLED'] == 'true'
-			config.logger = RemoteSyslogLogger.new(ENV['SYSLOG_HOST'], ENV['SYSLOG_PORT'], :program => 'redmine')
+		  config.logger = RemoteSyslogLogger.new(ENV['SYSLOG_HOST'], ENV['SYSLOG_PORT'], :program => 'redmine')
 		else
-			config.logger = Logger.new(STDOUT)
+		  config.logger = Logger.new(STDOUT)
 		end
 
 		config.logger.level = Logger::$LOG_LEVEL
@@ -120,7 +120,7 @@ case "$1" in rails|thin|rake)
 	# Generate secret
 	if [ ! -s config/secrets.yml ]; then
 		if [ "$REDMINE_SECRET_KEY_BASE" ]; then
-			cat > 'config/secrets.yml' <<-YML
+			cat > config/secrets.yml <<-YML
 				$RAILS_ENV:
 				  secret_key_base: "$REDMINE_SECRET_KEY_BASE"
 			YML
