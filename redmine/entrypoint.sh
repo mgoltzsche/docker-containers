@@ -1,8 +1,8 @@
 #!/bin/sh
 
 export LOG_LEVEL=${LOG_LEVEL:-ERROR}
-export SYSLOG_ENABLED=${SYSLOG_ENABLED:-false}
-export SYSLOG_HOST=${SYSLOG_HOST:-logstash}
+export SYSLOG_REMOTE_ENABLED=${SYSLOG_REMOTE_ENABLED:-false}
+export SYSLOG_HOST=${SYSLOG_HOST:-syslog}
 export SYSLOG_PORT=${SYSLOG_PORT:-514}
 HOST_DOMAIN=$(hostname -d)
 LDAP_AUTH=${LDAP_AUTH:-} # Set auth name to enable ldap
@@ -102,7 +102,7 @@ case "$1" in rails|thin|rake)
 
 	# Write log config
 	cat > ./config/additional_environment.rb <<-YML
-		if ENV['SYSLOG_ENABLED'] == 'true'
+		if ENV['SYSLOG_REMOTE_ENABLED'] == 'true'
 		  config.logger = RemoteSyslogLogger.new(ENV['SYSLOG_HOST'], ENV['SYSLOG_PORT'], :program => 'redmine')
 		else
 		  config.logger = Logger.new(STDOUT)
@@ -112,7 +112,7 @@ case "$1" in rails|thin|rake)
 	YML
 
 	# Wait for syslog server
-	[ ! "$SYSLOG_ENABLED" = 'true' ] || waitForUdpService "$SYSLOG_HOST" "$SYSLOG_PORT"
+	[ ! "$SYSLOG_REMOTE_ENABLED" = 'true' ] || waitForUdpService "$SYSLOG_HOST" "$SYSLOG_PORT"
 
 	# Ensure the right database adapter is active in Gemfile.lock
 	bundle install --without development test || exit 1

@@ -34,19 +34,6 @@ services:
       - elasticsearch
     links:
       - elasticsearch
-  logspout:
-    extends:
-      file: common.yml
-      service: logspout
-    depends_on:
-      - logstash
-    links:
-      - logstash
-
-#  apacheds:
-#    extends:
-#      file: apacheds/docker-compose.yml
-#      service: apacheds
   ldap:
     extends:
       file: 389ds/docker-compose.yml
@@ -67,22 +54,26 @@ services:
       file: mail/docker-compose.yml
       service: mail
     environment:
-      SYSLOG_ENABLED: "true"
+      SYSLOG_REMOTE_ENABLED: "true"
       SYSLOG_HOST: "logstash"
-      SYSLOG_PORT: 1025
+      SYSLOG_PORT: 10514
   postgres:
     extends:
-      file: common.yml
+      file: postgres/docker-compose.yml
       service: postgres
     environment:
-      POSTGRES_PASSWORD: "${POSTGRES_PASSWORD}"
+      SYSLOG_REMOTE_ENABLED: "true"
+      SYSLOG_HOST: "logstash"
+      SYSLOG_PORT: 10514
       PG_USER_REDMINE: "${REDMINE_POSTGRES_PASSWORD}"
   redmine:
     extends:
       file: redmine/docker-compose.yml
       service: redmine
     environment:
-      LOGSTASH_ENABLED: "true"
+      SYSLOG_REMOTE_ENABLED: "true"
+      SYSLOG_HOST: "logstash"
+      SYSLOG_PORT: 10514
     depends_on:
       - postgres
     links:

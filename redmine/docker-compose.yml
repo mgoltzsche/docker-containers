@@ -12,7 +12,7 @@ services:
 #      - "./data:/var/lib/dirsrv"
   postgres:
     extends:
-      file: ../common.yml
+      file: ../postgres/docker-compose.yml
       service: postgres
     environment:
       PG_USER_REDMINE: "${REDMINE_POSTGRES_PASSWORD}"

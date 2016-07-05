@@ -20,22 +20,31 @@ services:
       - elasticsearch
     links:
       - elasticsearch
-  mail:
+#  mail:
+#    extends:
+#      file: ../mail/docker-compose.yml
+#      service: mail
+#    environment:
+#      LDAP_STARTUP_CHECK_ENABLED: 'false'
+#      SYSLOG_REMOTE_ENABLED: "true"
+#      SYSLOG_HOST: "logstash"
+#      SYSLOG_PORT: 1025
+  postgres:
     extends:
-      file: ../mail/docker-compose.yml
-      service: mail
+      file: ../postgres/docker-compose.yml
+      service: postgres
     environment:
-      LDAP_STARTUP_CHECK_ENABLED: 'false'
-      SYSLOG_ENABLED: "true"
+      SYSLOG_REMOTE_ENABLED: "true"
       SYSLOG_HOST: "logstash"
-      SYSLOG_PORT: 1025
+      SYSLOG_PORT: 10514
 #  redmine:
 #    image: algorythm/redmine-backlogs:latest
 #    hostname: redmine.algorythm.de
 #    ports:
 #      - "3000:3000"
 #    environment:
-#      SYSLOG_ENABLED: "true"
+#      SYSLOG_REMOTE_ENABLED: "true"
+#      SYSLOG_HOST: "logstash"
 #      SYSLOG_PORT: 10514
 #  ldap:
 #    image: algorythm/389ds:latest

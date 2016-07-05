@@ -1,13 +1,9 @@
 version: '2'
 services:
-  mail:
-    image: algorythm/mail:latest
-    hostname: mail.algorythm.de
+  postgres:
+    image: algorythm/postgres:latest
+    hostname: postgres
     ports:
-      - "25:25"
-      - "465:465"
-      - "587:587"
-      - "110:110"
-      - "143:143"
-      - "993:993"
-      - "995:995"
+      - "5432:5432"
+    environment:
+      PG_USER_POSTGRES: "${POSTGRES_PASSWORD}"

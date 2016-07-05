@@ -196,6 +196,7 @@ startLog() {
 	for PIPE in $PIPE_PATHS; do mkfifo $PIPE || exit 1; done
 	SERVICE_HOST=$(hostname -s)
 	if [ "$LOGSTASH_ENABLED" ]; then # Also log to logstash via tcp
+		# TODO: log with logger command (can also log to stderr, solves connection loss problem)
 		mkfifo /tmp/log-pipe || exit 1
 		catPipe $ACCESS_PIPE "$SERVICE_HOST ACCESS" >/tmp/log-pipe &
 		LOG_PIDS="$LOG_PIDS $!"

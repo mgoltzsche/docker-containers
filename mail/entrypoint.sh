@@ -2,8 +2,8 @@
 
 DOMAIN=$(hostname -d)
 CERTIFICATE_NAME='server' # TODO: if this is dynamic the values in postfix/dovecot config have to be adjusted dynamically
-SYSLOG_ENABLED=${SYSLOG_ENABLED:=false}
-SYSLOG_HOST=${SYSLOG_HOST:=logstash}
+SYSLOG_REMOTE_ENABLED=${SYSLOG_REMOTE_ENABLED:=false}
+SYSLOG_HOST=${SYSLOG_HOST:=syslog}
 SYSLOG_PORT=${SYSLOG_PORT:=514}
 LDAP_SUFFIX=${LDAP_SUFFIX:='dc='$(echo -n "$DOMAIN" | sed s/\\./,dc=/g)}
 LDAP_HOST=${LDAP_HOST:=ldap}
@@ -52,7 +52,7 @@ setupSslCertificate() {
 setupRsyslog() {
 	# Wait until syslog server is available to capture log
 	RSYSLOG_REMOTE_CFG=
-	if [ "$SYSLOG_ENABLED" = 'true' ]; then
+	if [ "$SYSLOG_REMOTE_ENABLED" = 'true' ]; then
 		awaitSuccess "Waiting for syslog UDP server $SYSLOG_HOST:$SYSLOG_PORT" nc -uzvw1 "$SYSLOG_HOST" "$SYSLOG_PORT" 2>/dev/null
 		RSYSLOG_REMOTE_CFG="*.* @$SYSLOG_HOST:$SYSLOG_PORT"
 	fi

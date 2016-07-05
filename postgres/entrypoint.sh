@@ -1,7 +1,7 @@
 #!/bin/sh
 
-SYSLOG_ENABLED=${SYSLOG_ENABLED:=false}
-SYSLOG_HOST=${SYSLOG_HOST:=logstash}
+SYSLOG_REMOTE_ENABLED=${SYSLOG_REMOTE_ENABLED:=false}
+SYSLOG_HOST=${SYSLOG_HOST:=syslog}
 SYSLOG_PORT=${SYSLOG_PORT:=514}
 
 awaitSuccess() {
@@ -82,7 +82,7 @@ setupPostgres() {
 
 startRsyslog() {
 	SYSLOG_REMOTE_CFG=
-	if [ "$SYSLOG_ENABLED" = 'true' ]; then
+	if [ "$SYSLOG_REMOTE_ENABLED" = 'true' ]; then
 		awaitSuccess "Waiting for syslog UDP server $SYSLOG_HOST:$SYSLOG_PORT" nc -uzvw1 "$SYSLOG_HOST" "$SYSLOG_PORT"
 		SYSLOG_REMOTE_CFG="*.* @$SYSLOG_HOST:$SYSLOG_PORT"
 	fi
