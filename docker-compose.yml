@@ -39,7 +39,9 @@ services:
       file: 389ds/docker-compose.yml
       service: ldap
     environment:
-      LOGSTASH_ENABLED: "true"
+      SYSLOG_REMOTE_ENABLED: "true"
+      SYSLOG_HOST: "logstash"
+      SYSLOG_PORT: 10514
       LDAP_USER_DN_REDMINE: "${REDMINE_LDAP_USER_DN}"
       LDAP_USER_PW_REDMINE: "${REDMINE_LDAP_USER_PW}"
 #    volumes:
@@ -57,6 +59,10 @@ services:
       SYSLOG_REMOTE_ENABLED: "true"
       SYSLOG_HOST: "logstash"
       SYSLOG_PORT: 10514
+    depends_on:
+      - logstash
+    links:
+      - logstash
   postgres:
     extends:
       file: postgres/docker-compose.yml
@@ -66,6 +72,10 @@ services:
       SYSLOG_HOST: "logstash"
       SYSLOG_PORT: 10514
       PG_USER_REDMINE: "${REDMINE_POSTGRES_PASSWORD}"
+    depends_on:
+      - logstash
+    links:
+      - logstash
   redmine:
     extends:
       file: redmine/docker-compose.yml

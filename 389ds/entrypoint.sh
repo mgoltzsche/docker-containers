@@ -77,7 +77,7 @@ setupSystemUsers() {
 	LDAP_USERS="$(set | grep -Eo '^LDAP_USER_DN_[^=]+' | sed 's/^LDAP_USER_DN_//')" # prevent user created from LDAP_USER_*_PASSWORD var
 
 	if [ "$LDAP_USERS" ]; then
-		waitForService localhost $LDAP_SERVER_PORT
+		waitForTcpService localhost $LDAP_SERVER_PORT
 
 		for LDAP_USER_KEY in "$LDAP_USERS"; do
 			LDAP_USER_DN=$(eval "echo \$LDAP_USER_DN_$LDAP_USER_KEY")
@@ -147,9 +147,25 @@ encodeLdapPassword() {
 	pwdhash -s ssha512 "$1" | base64 - | xargs | sed 's/ /\n /'
 }
 
-waitForService() {
+awaitSuccess() {
+	MSG="$1"
+	shift
+	until $@ >/dev/null 2>/dev/null; do
+		[ ! "$MSG" ] || echo "$MSG" >&2
+		sleep 1
+	done
+}
+
+waitForTcpService() {
 	until timeout 1 bash -c "</dev/tcp/$1/$2" 2>/dev/null; do
-		echo "Waiting for service $1:$2"
+		echo "Waiting for TCP service $1:$2"
+		sleep 1
+	done
+}
+
+waitForUdpService() {
+	until timeout 1 bash -c "</dev/udp/$1/$2" 2>/dev/null; do
+		echo "Waiting for UDP service $1:$2"
 		sleep 1
 	done
 }
@@ -157,7 +173,7 @@ waitForService() {
 disableSlapdLogRotation() {
 	# Disables slapd log rotation (to use named pipe)
 	echo "Disabling log rotation"
-	waitForService localhost $LDAP_SERVER_PORT
+	waitForTcpService localhost $LDAP_SERVER_PORT
 	echo "dn: cn=config
 changetype: modify
 replace: nsslapd-accesslog-maxlogsperdir
@@ -177,7 +193,8 @@ nsslapd-accesslog-logbuffering: off
 catPipe() {
 	if [ "$2" ]; then
 		while true; do
-			sed -Eu "s/^\[[0-9a-zA-Z\/:+ ]+\]/\0 $2/g" "$1" || exit 1
+			# Replace timestamp with log level
+			sed -Eu "s/^\[[^]]+\] /$2 /g" "$1" || exit 1
 		done
 	else
 		while true; do
@@ -187,7 +204,7 @@ catPipe() {
 }
 
 startLog() {
-	set -e : ${LOGSTASH_HOST:=logstash} ${LOGSTASH_PORT:=10389}
+	set -e : ${SYSLOG_HOST:=syslog} ${SYSLOG_PORT:=514}
 	ACCESS_PIPE=$INSTANCE_LOG_DIR/access
 	AUDIT_PIPE=$INSTANCE_LOG_DIR/audit
 	ERROR_PIPE=$INSTANCE_LOG_DIR/errors
@@ -195,30 +212,28 @@ startLog() {
 	rm -rf /tmp/log-pipe $PIPE_PATHS || exit 1
 	for PIPE in $PIPE_PATHS; do mkfifo $PIPE || exit 1; done
 	SERVICE_HOST=$(hostname -s)
-	if [ "$LOGSTASH_ENABLED" ]; then # Also log to logstash via tcp
-		# TODO: log with logger command (can also log to stderr, solves connection loss problem)
+	if [ "$SYSLOG_REMOTE_ENABLED" ]; then # Also log to logstash via tcp
 		mkfifo /tmp/log-pipe || exit 1
-		catPipe $ACCESS_PIPE "$SERVICE_HOST ACCESS" >/tmp/log-pipe &
+		catPipe $ACCESS_PIPE "ACCESS" >/tmp/log-pipe &
 		LOG_PIDS="$LOG_PIDS $!"
-		catPipe $AUDIT_PIPE "$SERVICE_HOST AUDIT" >/tmp/log-pipe &
+		catPipe $AUDIT_PIPE "AUDIT" >/tmp/log-pipe &
 		LOG_PIDS="$LOG_PIDS $!"
-		catPipe $ERROR_PIPE "$SERVICE_HOST ERROR" >/tmp/log-pipe &
+		catPipe $ERROR_PIPE "ERROR" >/tmp/log-pipe &
 		LOG_PIDS="$LOG_PIDS $!"
 
 		(
 			while true; do
-				waitForService $LOGSTASH_HOST $LOGSTASH_PORT
-				# TODO: Retry sending last part when pipe breaks (due to log server connection loss) - or use nc -u (UDP) to not block the application at all and reduce connection overhead
-				catPipe /tmp/log-pipe | tee >(telnet -E $LOGSTASH_HOST $LOGSTASH_PORT)
+				waitForUdpService $SYSLOG_HOST $SYSLOG_PORT
+				catPipe /tmp/log-pipe | logger -d -n $SYSLOG_HOST -P $SYSLOG_PORT -s -t "$SERVICE_HOST slapd"
 			done
 		) &
 		LOG_PIDS="$LOG_PIDS $!"
 	else
-		catPipe $ACCESS_PIPE "$SERVICE_HOST ACCESS" &
+		catPipe $ACCESS_PIPE "ACCESS" &
 		LOG_PIDS="$LOG_PIDS $!"
-		catPipe $AUDIT_PIPE "$SERVICE_HOST AUDIT" &
+		catPipe $AUDIT_PIPE "AUDIT" &
 		LOG_PIDS="$LOG_PIDS $!"
-		catPipe $ERROR_PIPE "$SERVICE_HOST ERROR" &
+		catPipe $ERROR_PIPE "ERROR" &
 		LOG_PIDS="$LOG_PIDS $!"
 	fi
 	while ps $LOG_PIDS >/dev/null && [ ! -p "$INSTANCE_LOG_DIR/errors" ]; do sleep 1; done # Wait until pipes initialized
@@ -276,7 +291,7 @@ case "$1" in
 		if [ "$CMD" = ns-slapd ]; then # LDAP operations
 			wait
 		else
-			waitForService localhost $LDAP_SERVER_PORT
+			waitForTcpService localhost $LDAP_SERVER_PORT
 			"$CMD" $LDAP_OPTS $@
 			terminateSynchronously $(slapdPID) $LOG_PIDS
 		fi
