@@ -1,5 +1,4 @@
-#!/bin/bash
-# bash required for tee >(telnet ...) logging call only
+#!/bin/sh
 
 FULL_MACHINE_NAME=$(hostname -f)
 INSTANCE_ID=${INSTANCE_ID:=$(hostname -s)}
@@ -213,6 +212,7 @@ startLog() {
 	for PIPE in $PIPE_PATHS; do mkfifo $PIPE || exit 1; done
 	SERVICE_HOST=$(hostname -s)
 	if [ "$SYSLOG_REMOTE_ENABLED" ]; then # Also log to logstash via tcp
+		# TODO: Log directly with logger (maybe into local rsyslog) to avoid ending 0 bytes
 		mkfifo /tmp/log-pipe || exit 1
 		catPipe $ACCESS_PIPE "ACCESS" >/tmp/log-pipe &
 		LOG_PIDS="$LOG_PIDS $!"
@@ -224,7 +224,7 @@ startLog() {
 		(
 			while true; do
 				waitForUdpService $SYSLOG_HOST $SYSLOG_PORT
-				catPipe /tmp/log-pipe | logger -d -n $SYSLOG_HOST -P $SYSLOG_PORT -s -t "$SERVICE_HOST slapd"
+				logger -d -n $SYSLOG_HOST -P $SYSLOG_PORT -s -t "$SERVICE_HOST slapd" -f /tmp/log-pipe
 			done
 		) &
 		LOG_PIDS="$LOG_PIDS $!"
