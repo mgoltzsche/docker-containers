@@ -20,6 +20,7 @@ LDAP_ATTR_MAIL=${LDAP_ATTR_MAIL:-mail}
 LDAP_ONTHEFLY_REGISTER=${LDAP_ONTHEFLY_REGISTER:-t}
 LDAP_TLS=${LDAP_TLS:-f}
 LDAP_TIMEOUT=${LDAP_TIMEOUT:-30}
+SMTP_ENABLED=${SMTP_ENABLED:-false}
 SMTP_HOST=${SMTP_HOST:-mail}
 SMTP_PORT=${SMTP_PORT:-25}
 SMTP_DOMAIN=${SMTP_DOMAIN:-$HOST_DOMAIN}
@@ -84,21 +85,23 @@ case "$1" in rails|thin|rake)
 	YML
 
 	# Write mail config
-	cat > ./config/configuration.yml <<-YML
-		$RAILS_ENV:
-		  attachments_storage_path: /redmine/files
-		  email_delivery:
-			delivery_method: :smtp
-			smtp_settings:
-			  address: "$SMTP_HOST"
-			  port: $SMTP_PORT
-			  domain: "$SMTP_DOMAIN"
-			  authentication: :plain
-			  user_name: "$SMTP_USER"
-			  password: "$SMTP_PASSWORD"
-			  tls: $SMTP_TLS
-			  enable_starttls_auto: $SMTP_STARTTLS
-	YML
+	if [ "$SMTP_ENABLED" = 'true' ]; then
+		cat > ./config/configuration.yml <<-YML
+			$RAILS_ENV:
+			  attachments_storage_path: /redmine/files
+			  email_delivery:
+				delivery_method: :smtp
+				smtp_settings:
+				  address: "$SMTP_HOST"
+				  port: $SMTP_PORT
+				  domain: "$SMTP_DOMAIN"
+				  authentication: :plain
+				  user_name: "$SMTP_USER"
+				  password: "$SMTP_PASSWORD"
+				  tls: $SMTP_TLS
+				  enable_starttls_auto: $SMTP_STARTTLS
+		YML
+	fi
 
 	# Write log config
 	cat > ./config/additional_environment.rb <<-YML
@@ -240,8 +243,10 @@ exit 1
 	chown -R redmine:redmine files log public/plugin_assets
 	rm -f tmp/pids/server.pid
 
-	# Wait for mail server
-	#waitForTcpService "$SMTP_HOST" "$SMTP_PORT"
+	if [ "$SMTP_ENABLED" = 'true' ]; then
+		# Wait for mail server
+		waitForTcpService "$SMTP_HOST" "$SMTP_PORT"
+	fi
 
 	set -- gosu redmine "$@"
 	;;

@@ -84,6 +84,7 @@ services:
       SYSLOG_REMOTE_ENABLED: "true"
       SYSLOG_HOST: "logstash"
       SYSLOG_PORT: 10514
+      SMTP_ENABLED: "true"
     depends_on:
       - postgres
     links:
