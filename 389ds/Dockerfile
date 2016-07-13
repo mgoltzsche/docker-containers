@@ -2,9 +2,10 @@
 FROM fedora:24
 MAINTAINER "Max Goltzsche" <max.goltzsche@algorythm.de>
 RUN yum update -y \
-	&& yum install -y 389-ds-base bzip2 rsyslog hostname procps-ng findutils \
-	&& yum clean all
-RUN rm /var/lock
+	&& yum install -y 389-ds-base rsyslog hostname procps-ng findutils bzip2 \
+	&& yum clean all \
+	&& rm /var/lock
+
 EXPOSE 389
 
 VOLUME /var/lib/dirsrv
