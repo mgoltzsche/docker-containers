@@ -81,10 +81,10 @@ setupPostgres() {
 }
 
 startRsyslog() {
-	SYSLOG_REMOTE_CFG=
+	SYSLOG_FORWARDING_CFG=
 	if [ "$SYSLOG_REMOTE_ENABLED" = 'true' ]; then
 		awaitSuccess "Waiting for syslog UDP server $SYSLOG_HOST:$SYSLOG_PORT" nc -uzvw1 "$SYSLOG_HOST" "$SYSLOG_PORT"
-		SYSLOG_REMOTE_CFG="*.* @$SYSLOG_HOST:$SYSLOG_PORT"
+		SYSLOG_FORWARDING_CFG="*.* @$SYSLOG_HOST:$SYSLOG_PORT"
 	fi
 
 	cat > /etc/rsyslog.conf <<-EOF
@@ -92,7 +92,7 @@ startRsyslog() {
 		\$ModLoad omstdout.so # provides messages to stdout
 
 		*.* :omstdout: # send everything to stdout
-		$SYSLOG_REMOTE_CFG
+		$SYSLOG_FORWARDING_CFG
 	EOF
 	[ $? -eq 0 ] || exit 1
 	chmod 444 /etc/rsyslog.conf || exit 1

@@ -51,10 +51,10 @@ setupSslCertificate() {
 
 setupRsyslog() {
 	# Wait until syslog server is available to capture log
-	RSYSLOG_REMOTE_CFG=
+	RSYSLOG_FORWARDING_CFG=
 	if [ "$SYSLOG_REMOTE_ENABLED" = 'true' ]; then
 		awaitSuccess "Waiting for syslog UDP server $SYSLOG_HOST:$SYSLOG_PORT" nc -uzvw1 "$SYSLOG_HOST" "$SYSLOG_PORT" 2>/dev/null
-		RSYSLOG_REMOTE_CFG="*.* @$SYSLOG_HOST:$SYSLOG_PORT"
+		RSYSLOG_FORWARDING_CFG="*.* @$SYSLOG_HOST:$SYSLOG_PORT"
 	fi
 
 	cat > /etc/rsyslog.conf <<-EOF
@@ -63,7 +63,7 @@ setupRsyslog() {
 		\$ModLoad omstdout.so # provides messages to stdout
 
 		*.* :omstdout: # send everything to stdout
-		$RSYSLOG_REMOTE_CFG
+		$RSYSLOG_FORWARDING_CFG
 	EOF
 	[ $? -eq 0 ] || exit 1
 	chmod 444 /etc/rsyslog.conf || exit 1

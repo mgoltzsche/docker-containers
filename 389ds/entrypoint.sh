@@ -43,23 +43,24 @@ setupDirsrvInstance() {
 		fi
 
 		echo "Installing LDAP server instance with:$(echo '';set | grep -E '^LDAP_' | sed -E 's/(^[^=]+_PWD=).+/\1***/' | grep -Ev '^LDAP_USER_' | xargs -n1 echo ' ')"
-		echo > "$LDAP_INSTALL_INF_FILE" "
-[General]
-FullMachineName= $FULL_MACHINE_NAME
-AdminDomain= $LDAP_ADMIN_DOMAIN
-SuiteSpotUserID= nobody
-SuiteSpotGroup= nobody
-ConfigDirectoryAdminID= $LDAP_CONFIG_DIRECTORY_ADMIN_ID
-ConfigDirectoryAdminPwd= $LDAP_CONFIG_DIRECTORY_ADMIN_PWD
+		cat > "$LDAP_INSTALL_INF_FILE" <<-EOF
+			[General]
+			FullMachineName= $FULL_MACHINE_NAME
+			AdminDomain= $LDAP_ADMIN_DOMAIN
+			SuiteSpotUserID= nobody
+			SuiteSpotGroup= nobody
+			ConfigDirectoryAdminID= $LDAP_CONFIG_DIRECTORY_ADMIN_ID
+			ConfigDirectoryAdminPwd= $LDAP_CONFIG_DIRECTORY_ADMIN_PWD
 
-[slapd]
-ServerIdentifier= $INSTANCE_ID
-ServerPort= $LDAP_SERVER_PORT
-Suffix= $LDAP_SUFFIX
-RootDN= $LDAP_ROOT_DN
-RootDNPwd= $LDAP_ROOT_DN_PWD
-InstallLdifFile= $LDAP_INSTALL_LDIF_FILE
-		" || exit 1
+			[slapd]
+			ServerIdentifier= $INSTANCE_ID
+			ServerPort= $LDAP_SERVER_PORT
+			Suffix= $LDAP_SUFFIX
+			RootDN= $LDAP_ROOT_DN
+			RootDNPwd= $LDAP_ROOT_DN_PWD
+			InstallLdifFile= $LDAP_INSTALL_LDIF_FILE
+		EOF
+		[ $? -eq 0 ] || exit 1
 	fi
 
     # Disable SELinux (taken from https://github.com/ioggstream/dockerfiles/blob/master/389ds/tls/entrypoint.sh)
@@ -104,46 +105,40 @@ setupSystemUsers() {
 				exit 1
 			fi
 
-			if ! ldapsearch $LDAP_OPTS -b "$LDAP_USER_DN" -LLL + * >/dev/null; then
-				# Create user if not exists
-				echo "Adding LDAP user $LDAP_USER_DN"
-				LDIF="
-dn: $LDAP_USER_DN
-objectClass: applicationProcess
-objectClass: simpleSecurityObject
-objectClass: top
-objectClass: mailRecipient
-$LDAP_USER_PREFIX
-mail: $LDAP_USER_EMAIL
-mailForwardingAddress: max.goltzsche@algorythm.de
-userPassword:: $LDAP_USER_PW_HASH
-"
-				if ! echo "$LDIF" | ldapadd $LDAP_OPTS; then
-					echo "$LDIF" >&2
-					exit 1
-				fi
-			else
+			if ldapsearch $LDAP_OPTS -b "$LDAP_USER_DN" -LLL + * >/dev/null; then
 				# Reset user password
 				echo "Resetting LDAP user's password: $LDAP_USER_DN"
-
-				LDIF="
-dn: $LDAP_USER_DN
-changetype: modify
-replace: userPassword
-userPassword:: $LDAP_USER_PW_HASH
-"
-				if ! echo "$LDIF" | ldapmodify $LDAP_OPTS; then
-					echo "$LDIF" >&2
-					exit 1
-				fi
+				LDAP_CHANGE_CMD=ldapmodify
+				LDIF=<<-EOF
+					dn: $LDAP_USER_DN
+					changetype: modify
+					replace: userPassword
+					userPassword:: $LDAP_USER_PW_HASH
+				EOF
+			else
+				# Create user if not exists
+				echo "Adding LDAP user $LDAP_USER_DN"
+				LDAP_CHANGE_CMD=ldapadd
+				LDIF=<<-EOF
+					dn: $LDAP_USER_DN
+					objectClass: applicationProcess
+					objectClass: simpleSecurityObject
+					objectClass: top
+					objectClass: mailRecipient
+					$LDAP_USER_PREFIX
+					mail: $LDAP_USER_EMAIL
+					mailForwardingAddress: max.goltzsche@algorythm.de
+					userPassword:: $LDAP_USER_PW_HASH
+				EOF
 			fi
+
+			$LDAP_CHANGE_CMD $LDAP_OPTS <<< "$LDIF" || (echo "$LDIF">&2;false) || exit 1
 		done
 	fi
 }
 
 encodeLdapPassword() {
-	#pwdhash -s ssha512 "$1" | base64 -
-	pwdhash -s ssha512 "$1" | base64 - | xargs | sed 's/ /\n /'
+	pwdhash -s ssha512 "$1" | base64 - | xargs | sed 's/ /\n /' || exit 1
 }
 
 awaitSuccess() {
@@ -156,142 +151,70 @@ awaitSuccess() {
 }
 
 waitForTcpService() {
-	until timeout 1 bash -c "</dev/tcp/$1/$2" 2>/dev/null; do
-		echo "Waiting for TCP service $1:$2"
-		sleep 1
-	done
+	awaitSuccess "Waiting for TCP service $1:$2" timeout 1 bash -c "</dev/tcp/$1/$2"
 }
 
-waitForUdpService() {
-	until timeout 1 bash -c "</dev/udp/$1/$2" 2>/dev/null; do
-		echo "Waiting for UDP service $1:$2"
-		sleep 1
-	done
-}
-
-disableSlapdLogRotation() {
-	# Disables slapd log rotation (to use named pipe)
-	echo "Disabling log rotation"
+setupSlapdLogging() {
 	waitForTcpService localhost $LDAP_SERVER_PORT
 	ldapmodify $LDAP_OPTS <<-EOF
 		dn: cn=config
 		changetype: modify
-		replace: nsslapd-accesslog-maxlogsperdir
-		nsslapd-accesslog-maxlogsperdir: 1
-		-
-		replace: nsslapd-accesslog-logexpirationtime
-		nsslapd-accesslog-logexpirationtime: -1
-		-
-		replace: nsslapd-accesslog-logrotationtime
-		nsslapd-accesslog-logrotationtime: -1
+		replace: nsslapd-logging-backend
+		nsslapd-logging-backend: syslog
 		-
 		replace: nsslapd-accesslog-logbuffering
 		nsslapd-accesslog-logbuffering: off
-		-
-		replace: nsslapd-errorlog-maxlogsperdir
-		nsslapd-errorlog-maxlogsperdir: 1
-		-
-		replace: nsslapd-errorlog-logexpirationtime
-		nsslapd-errorlog-logexpirationtime: -1
-		-
-		replace: nsslapd-errorlog-logrotationtime
-		nsslapd-errorlog-logrotationtime: -1
-		-
-		replace: nsslapd-auditlog-maxlogsperdir
-		nsslapd-auditlog-maxlogsperdir: 1
-		-
-		replace: nsslapd-auditlog-logexpirationtime
-		nsslapd-auditlog-logexpirationtime: -1
-		-
-		replace: nsslapd-auditlog-logrotationtime
-		nsslapd-auditlog-logrotationtime: -1
 	EOF
 	[ $? -eq 0 ] || exit 1
 }
 
-catPipe() {
-	if [ "$2" ]; then
-		while true; do
-			# Replace timestamp with log level
-			sed -Eu "s/^\[[^]]+\] /$2 /g" "$1" || exit 1
-		done
-	else
-		while true; do
-			cat "$1" || exit 1
-		done
+startRsyslog() {
+	# Configure syslog forwarding and wait for remote syslog server
+	RSYSLOG_FORWARDING_CFG=
+	if [ "$SYSLOG_REMOTE_ENABLED" = 'true' ]; then
+		# TODO: Wait for remote syslog
+		#awaitSuccess "Waiting for remote syslog UDP server $SYSLOG_HOST:$SYSLOG_PORT" nc -uzvw1 "$SYSLOG_HOST" "$SYSLOG_PORT" 2>/dev/null
+		RSYSLOG_FORWARDING_CFG="*.* @$SYSLOG_HOST:$SYSLOG_PORT"
 	fi
-}
 
-startLog() {
-	set -e : ${SYSLOG_HOST:=syslog} ${SYSLOG_PORT:=514}
-	ACCESS_PIPE=$INSTANCE_LOG_DIR/access
-	AUDIT_PIPE=$INSTANCE_LOG_DIR/audit
-	ERROR_PIPE=$INSTANCE_LOG_DIR/errors
-	PIPE_PATHS="$ACCESS_PIPE $AUDIT_PIPE $ERROR_PIPE"
-	rm -rf /tmp/log-pipe $PIPE_PATHS || exit 1
-	for PIPE in $PIPE_PATHS; do mkfifo $PIPE || exit 1; done
-	SERVICE_HOST=$(hostname -s)
-	if [ "$SYSLOG_REMOTE_ENABLED" ]; then # Also log to logstash via tcp
-		waitForUdpService $SYSLOG_HOST $SYSLOG_PORT
-		# TODO: Log directly with logger (maybe into local rsyslog) to avoid ending 0 bytes
-		#       -> may not help because ending 0 bytes occur on pipe write
-		mkfifo /tmp/log-pipe || exit 1
-		catPipe $ACCESS_PIPE "ACCESS" >/tmp/log-pipe &
-		LOG_PIDS="$LOG_PIDS $!"
-		catPipe $AUDIT_PIPE "AUDIT" >/tmp/log-pipe &
-		LOG_PIDS="$LOG_PIDS $!"
-		catPipe $ERROR_PIPE "ERROR" >/tmp/log-pipe &
-		LOG_PIDS="$LOG_PIDS $!"
+	# Write rsyslog config
+	cat > /etc/rsyslog.conf <<-EOF
+		\$ModLoad imuxsock.so # provides support for local system logging (e.g. via logger command)
+		\$ModLoad omstdout.so # provides messages to stdout
 
-		(
-			while true; do
-				logger -d -n $SYSLOG_HOST -P $SYSLOG_PORT -t "$SERVICE_HOST slapd" -s -f /tmp/log-pipe
-				waitForUdpService $SYSLOG_HOST $SYSLOG_PORT
-			done
-		) &
-		LOG_PIDS="$LOG_PIDS $!"
-	else
-		catPipe $ACCESS_PIPE "ACCESS" &
-		LOG_PIDS="$LOG_PIDS $!"
-		catPipe $AUDIT_PIPE "AUDIT" &
-		LOG_PIDS="$LOG_PIDS $!"
-		catPipe $ERROR_PIPE "ERROR" &
-		LOG_PIDS="$LOG_PIDS $!"
-	fi
-	while ps $LOG_PIDS >/dev/null && [ ! -p "$INSTANCE_LOG_DIR/errors" ]; do sleep 1; done # Wait until pipes initialized
-	ps $LOG_PIDS >/dev/null || exit 1
-	chown root:nobody $PIPE_PATHS || exit 1
-	chmod 660 $PIPE_PATHS || exit 1
+		*.* :omstdout: # send everything to stdout
+		$RSYSLOG_FORWARDING_CFG
+	EOF
+	[ $? -eq 0 ] || exit 1
+	chmod 444 /etc/rsyslog.conf || exit 1
+
+	# Start rsyslog
+	(
+		rsyslogd -n -f /etc/rsyslog.conf
+		terminateGracefully # Terminate whole container if syslogd somehow terminates
+	) &
+	awaitSuccess 'Waiting for local rsyslog' [ -S /dev/log ]
+	rm -rf $INSTANCE_LOG_DIR/*
 }
 
 slapdPID() {
 	ps h -o pid -C ns-slapd
 }
 
-terminateSynchronously() {
-	for PID in $@; do
-		kill "$PID" 2>/dev/null
-		awaitTermination "$PID"
-	done
-}
-
-awaitTermination() {
-	# Wait until process has been terminated
-	while [ ! -z "$1" ] && ps "$1" >/dev/null; do
-		sleep 1
-	done
-}
-
 terminateGracefully() {
-	echo "Terminating gracefully"
 	trap : SIGHUP SIGINT SIGQUIT SIGTERM # Disable termination call on signal to avoid infinite recursion
-	terminateSynchronously $(slapdPID) $LOG_PIDS
+	for PID in $(slapdPID) $(ps h -o pid -C rsyslogd); do
+		kill "$PID" 2>/dev/null
+		while [ ! -z "$PID" ] && ps "$PID" >/dev/null; do
+			sleep 1
+		done
+	done
 }
 
 case "$1" in
 	ns-slapd|ldapmodify|ldapadd|ldapdelete|ldapsearch)
 		setupDirsrvInstance # Install if directory doesn't exist
-		startLog
+		startRsyslog
 		CMD="$1"
 		shift
 		SLAPD_ARGS=
@@ -304,7 +227,7 @@ case "$1" in
 		fi
 		if [ ! "$(slapdPID)" ]; then
 			ns-slapd -D "$INSTANCE_DIR" $SLAPD_ARGS || exit $?
-			disableSlapdLogRotation || exit 1
+			setupSlapdLogging || exit 1
 			setupSystemUsers || exit 1
 		fi
 
@@ -315,7 +238,7 @@ case "$1" in
 		else
 			waitForTcpService localhost $LDAP_SERVER_PORT
 			"$CMD" $LDAP_OPTS $@
-			terminateSynchronously $(slapdPID) $LOG_PIDS
+			terminateGracefully
 		fi
 	;;
 	dump)
