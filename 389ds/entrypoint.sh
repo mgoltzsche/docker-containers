@@ -173,20 +173,40 @@ disableSlapdLogRotation() {
 	# Disables slapd log rotation (to use named pipe)
 	echo "Disabling log rotation"
 	waitForTcpService localhost $LDAP_SERVER_PORT
-	echo "dn: cn=config
-changetype: modify
-replace: nsslapd-accesslog-maxlogsperdir
-nsslapd-accesslog-maxlogsperdir: 1
--
-replace: nsslapd-accesslog-logexpirationtime
-nsslapd-accesslog-logexpirationtime: -1
--
-replace: nsslapd-accesslog-logrotationtime
-nsslapd-accesslog-logrotationtime: -1
--
-replace: nsslapd-accesslog-logbuffering
-nsslapd-accesslog-logbuffering: off
-" | ldapmodify $LDAP_OPTS || exit 1
+	ldapmodify $LDAP_OPTS <<-EOF
+		dn: cn=config
+		changetype: modify
+		replace: nsslapd-accesslog-maxlogsperdir
+		nsslapd-accesslog-maxlogsperdir: 1
+		-
+		replace: nsslapd-accesslog-logexpirationtime
+		nsslapd-accesslog-logexpirationtime: -1
+		-
+		replace: nsslapd-accesslog-logrotationtime
+		nsslapd-accesslog-logrotationtime: -1
+		-
+		replace: nsslapd-accesslog-logbuffering
+		nsslapd-accesslog-logbuffering: off
+		-
+		replace: nsslapd-errorlog-maxlogsperdir
+		nsslapd-errorlog-maxlogsperdir: 1
+		-
+		replace: nsslapd-errorlog-logexpirationtime
+		nsslapd-errorlog-logexpirationtime: -1
+		-
+		replace: nsslapd-errorlog-logrotationtime
+		nsslapd-errorlog-logrotationtime: -1
+		-
+		replace: nsslapd-auditlog-maxlogsperdir
+		nsslapd-auditlog-maxlogsperdir: 1
+		-
+		replace: nsslapd-auditlog-logexpirationtime
+		nsslapd-auditlog-logexpirationtime: -1
+		-
+		replace: nsslapd-auditlog-logrotationtime
+		nsslapd-auditlog-logrotationtime: -1
+	EOF
+	[ $? -eq 0 ] || exit 1
 }
 
 catPipe() {
@@ -212,7 +232,9 @@ startLog() {
 	for PIPE in $PIPE_PATHS; do mkfifo $PIPE || exit 1; done
 	SERVICE_HOST=$(hostname -s)
 	if [ "$SYSLOG_REMOTE_ENABLED" ]; then # Also log to logstash via tcp
+		waitForUdpService $SYSLOG_HOST $SYSLOG_PORT
 		# TODO: Log directly with logger (maybe into local rsyslog) to avoid ending 0 bytes
+		#       -> may not help because ending 0 bytes occur on pipe write
 		mkfifo /tmp/log-pipe || exit 1
 		catPipe $ACCESS_PIPE "ACCESS" >/tmp/log-pipe &
 		LOG_PIDS="$LOG_PIDS $!"
@@ -223,8 +245,8 @@ startLog() {
 
 		(
 			while true; do
+				logger -d -n $SYSLOG_HOST -P $SYSLOG_PORT -t "$SERVICE_HOST slapd" -s -f /tmp/log-pipe
 				waitForUdpService $SYSLOG_HOST $SYSLOG_PORT
-				logger -d -n $SYSLOG_HOST -P $SYSLOG_PORT -s -t "$SERVICE_HOST slapd" -f /tmp/log-pipe
 			done
 		) &
 		LOG_PIDS="$LOG_PIDS $!"
