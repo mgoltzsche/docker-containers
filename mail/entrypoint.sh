@@ -140,6 +140,35 @@ setup() {
 	setupDovecot || exit 1
 }
 
+backup() {
+	# TODO: backup without shutting down MTA by moving queued mails to hold queue using
+	#   postsuper -h ALL
+	# and requeue them somehow on restore
+	stopDovecot &&
+	stopPostfix || exit 1
+	BACKUP_DATE=$(date +'%y-%m-%d_%H%M%S')
+	BACKUP_DIR=/backup/mail-$BACKUP_DATE
+	mkdir -p $BACKUP_DIR/etc &&
+	cp /etc/{dovecot/dovecot.conf,postfix/{main.cf,master.cf}} $BACKUP_DIR/etc/ &&
+	cp -R /var/mail $BACKUP_DIR/maildir &&
+	cp -R /var/spool/postfix $BACKUP_DIR/postfix-queue
+	startPostfix &&
+	startDovecot
+}
+
+restore() {
+	stopDovecot &&
+	stopPostfix || exit 1
+	BACKUP_DATE=$(date +'%y-%m-%d_%H%M%S')
+	BACKUP_DIR=/backup/mail-$BACKUP_DATE
+	rm -rf /var/mail &&
+	cp -R $BACKUP_DIR/mail /var/mail &&
+	cp -R $BACKUP_DIR/postfix-queue /var/spool/postfix &&
+	chown -R vmail:vmail /var/mail &&
+	startPostfix &&
+	startDovecot
+}
+
 startSyslog() {
 	# Start rsyslog to collect postfix & dovecot logs and print them to stdout and send them to logstash
 	export SYSLOGD="-m ${SYSLOG_MARK_INTERVAL:-60}" # Set syslog -- Mark -- interval in minutes (useful for health check)
@@ -152,6 +181,12 @@ startPostfix() {
 	/usr/sbin/postfix -c /etc/postfix start
 }
 
+stopPostfix() {
+	POSTFIX_PID=$(cat /var/spool/postfix/pid/master.pid 2>/dev/null)
+	kill $POSTFIX_PID 2>/dev/null || echo "Couldn't terminate postfix since it is not running" >&2
+	awaitTermination $POSTFIX_PID
+}
+
 startDovecot() {
 	DOVECOT_CONF=/etc/dovecot/dovecot.conf
 	DOVECOT_BASEDIR=$(/usr/sbin/dovecot -c $DOVECOT_CONF -a | grep '^base_dir = ' | sed 's/^base_dir = //') &&
@@ -159,23 +194,25 @@ startDovecot() {
 	/usr/sbin/dovecot -c "$DOVECOT_CONF"
 }
 
+stopDovecot() {
+	DOVECOT_PID=$(cat $(/usr/sbin/dovecot -c $DOVECOT_CONF -a | grep '^base_dir = ' | sed 's/^base_dir = //')master.pid 2>/dev/null)
+	kill $DOVECOT_PID 2>/dev/null || echo "Couldn't terminate dovecot since it is not running" >&2
+	awaitTermination $DOVECOT_PID
+}
+
 processTerminated() {
 	! ps -o pid | grep -q ${1:-0}
 }
 
 awaitTermination() {
-	awaitSuccess "Waiting for pid $1 to terminate" processTerminated $1
+	awaitSuccess "" processTerminated $1
 }
 
 terminateGracefully() {
 	# Terminate
 	trap : SIGHUP SIGINT SIGQUIT SIGTERM # Disable termination call on signal to avoid infinite recursion
-	POSTFIX_PID=$(cat /var/spool/postfix/pid/master.pid 2>/dev/null)
-	DOVECOT_PID=$(cat $(/usr/sbin/dovecot -c $DOVECOT_CONF -a | grep '^base_dir = ' | sed 's/^base_dir = //')master.pid 2>/dev/null)
-	kill $POSTFIX_PID 2>/dev/null || echo "Couldn't terminate postfix since it is not running" >&2
-	kill $DOVECOT_PID 2>/dev/null || echo "Couldn't terminate dovecot since it is not running" >&2
-	awaitTermination $POSTFIX_PID
-	awaitTermination $DOVECOT_PID
+	stopDovecot
+	stopPostfix
 	kill $SYSLOG_PID
 	awaitTermination $SYSLOG_PID
 	exit 0
@@ -184,17 +221,21 @@ terminateGracefully() {
 # Register signal handler for orderly shutdown
 trap terminateGracefully SIGHUP SIGINT SIGQUIT SIGTERM
 
-if [ "$1" = 'run' ]; then
-	setup
-	startSyslog
-	if [ ! "$LDAP_STARTUP_CHECK_ENABLED" = 'false' ]; then
-		awaitSuccess "Waiting for LDAP server $LDAP_HOST:$LDAP_PORT" nc -zvw1 "$LDAP_HOST" "$LDAP_PORT"
-	fi
-	startPostfix
-	startDovecot
-	wait
-elif [ "$1" = 'receivers' ]; then
-	grep -E 'to=<.*?>' /var/log/maillog* | grep -v 'NOQUEUE: reject:' | grep -Po '(?<=to=\<)[^>]+' | sort | uniq
-else
-	exec $1
-fi
+case "$1" in
+	run)
+		setup
+		startSyslog
+		if [ ! "$LDAP_STARTUP_CHECK_ENABLED" = 'false' ]; then
+			awaitSuccess "Waiting for LDAP server $LDAP_HOST:$LDAP_PORT" nc -zvw1 "$LDAP_HOST" "$LDAP_PORT"
+		fi
+		startPostfix
+		startDovecot
+		wait
+	;;
+	backup|restore)
+		$@
+	;;
+	*)
+		exec $1
+	;;
+esac

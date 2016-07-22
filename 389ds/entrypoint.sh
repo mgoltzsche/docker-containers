@@ -24,7 +24,10 @@ setupDirsrvInstance() {
 		return 0 # Skip setup if already configured
 	fi
 
+	FIRST_START='true'
+
 	set -e
+	: ${LDAP_INSTALL_BACKUP_FILE:=}
 	: ${LDAP_INSTALL_INF_FILE:=/tmp/ds-config.inf}
 	: ${LDAP_INSTALL_LDIF_FILE:=suggest}
 	: ${LDAP_CONFIG_DIRECTORY_ADMIN_ID:=admin}
@@ -168,6 +171,44 @@ setupSlapdLogging() {
 	[ $? -eq 0 ] || exit 1
 }
 
+backup() {
+	if [ ! "$1" ]; then echo "Usage: backup BACKUPFILE (tar.bz2)" >&2; return 1; fi
+	if [ -f "$1" ] || [ -d "$1" ]; then echo "Backup destination file $1 already exists" >&2; return 1; fi
+	ERROR=0
+	BACKUP_ID="ldap_${INSTANCE_ID}_$(date +'%y-%m-%d_%H-%M-%S')"
+	BACKUP_TMP_DIR=/tmp/$BACKUP_ID
+	mkdir -p $(dirname $1) &&
+	mkdir -p "$BACKUP_TMP_DIR" &&
+	chmod -R 770 "$BACKUP_TMP_DIR" &&
+	chown -R root:nobody "$BACKUP_TMP_DIR" || return 1
+	for DB_NAME in $(find /var/lib/dirsrv/slapd-$INSTANCE_ID/db/ -mindepth 1 -maxdepth 1 -type d | xargs -n 1 basename); do
+		ns-slapd db2ldif -D /etc/dirsrv/slapd-$INSTANCE_ID -n $DB_NAME -a "$BACKUP_TMP_DIR/$INSTANCE_ID-$DB_NAME.ldif" || ERROR=$?
+	done
+	(cd /tmp && tar cjf "$1" $BACKUP_ID)
+	ERROR=$?
+	rm -rf $BACKUP_TMP_DIR
+	[ "$ERROR" -eq 0 ]
+}
+
+restore() {
+	if [ ! "$1" ]; then echo "Usage: restore BACKUPFILE (tar.bz2)" >&2; exit 1; fi
+	if [ ! -f "$1" ]; then echo "Backup file $1 does not exist" >&2; exit 1; fi
+	if [ "$(slapdPID)" ]; then echo "You must terminate ns-slapd before you can restore dump" >&2; exit 1; fi
+	setupDirsrvInstance # Install if directory doesn't exist
+	EXTRACT_DIR=$(mktemp -d)
+	(cd $EXTRACT_DIR && tar xjf "$1") || exit $?
+	BACKUP_DIR="$EXTRACT_DIR/$(ls $EXTRACT_DIR)"
+	chown -R root:nobody $EXTRACT_DIR && chmod -R 770 $EXTRACT_DIR
+	ERROR=0
+	for LDIF in $(ls "$BACKUP_DIR" | grep -E '\.ldif$'); do
+		NAMES=$(echo $LDIF | sed -e 's/\.ldif$//')
+		DB_NAME=$(echo $NAMES | cut -d - -f 2)
+		ns-slapd ldif2db -D /etc/dirsrv/slapd-$INSTANCE_ID -n $DB_NAME -i "$BACKUP_DIR/$LDIF" || exit 1
+	done
+	rm -rf $EXTRACT_DIR
+	return $ERROR
+}
+
 startRsyslog() {
 	# Configure syslog forwarding and wait for remote syslog server
 	RSYSLOG_FORWARDING_CFG=
@@ -226,6 +267,7 @@ case "$1" in
 			fi
 		fi
 		if [ ! "$(slapdPID)" ]; then
+			[ ! "$FIRST_START" -a ! "$LDAP_INSTALL_BACKUP_FILE" ] || restore "$LDAP_INSTALL_BACKUP_FILE" || exit 1
 			ns-slapd -D "$INSTANCE_DIR" $SLAPD_ARGS || exit $?
 			setupSlapdLogging || exit 1
 			setupSystemUsers || exit 1
@@ -241,41 +283,8 @@ case "$1" in
 			terminateGracefully
 		fi
 	;;
-	dump)
-		if [ ! "$2" ]; then echo "Usage: $0 dump BACKUPFILE.tar.bz2" >&2; exit 1; fi
-		if [ -f "$2" ] || [ -d "$2" ]; then echo "Backup destination file $2 already exists" >&2; exit 1; fi
-		ERROR=0
-		ARCHIVE_FILE="$2"
-		BACKUP_ID="${INSTANCE_ID}_$(date +'%y-%m-%d_%H-%M-%S')"
-		BACKUP_TMP_DIR="/tmp/$BACKUP_ID"
-		mkdir -p $(dirname $2) &&
-		mkdir -p "$BACKUP_TMP_DIR" &&
-		chmod -R 770 "$BACKUP_TMP_DIR" &&
-		chown -R root:nobody "$BACKUP_TMP_DIR" || exit 1
-		for DB_NAME in $(find /var/lib/dirsrv/slapd-$INSTANCE_ID/db/ -mindepth 1 -maxdepth 1 -type d | xargs -n 1 basename); do
-			ns-slapd db2ldif -D /etc/dirsrv/slapd-$INSTANCE_ID -n $DB_NAME -a "$BACKUP_TMP_DIR/$INSTANCE_ID-$DB_NAME.ldif" >/dev/null || ERROR=$?
-		done
-		(cd /tmp && tar cjvf "$ARCHIVE_FILE" "$BACKUP_ID") || exit $?
-		rm -rf "$BACKUP_TMP_DIR"
-		exit $ERROR
-	;;
-	restore)
-		if [ ! "$2" ]; then echo "Usage: $0 restore BACKUPFILE (tar.bz2)" >&2; exit 1; fi
-		if [ ! -f "$2" ]; then echo "Backup file $2 does not exist" >&2; exit 1; fi
-		if [ "$(slapdPID)" ]; then echo "You must terminate ns-slapd before you can restore dump" >&2; exit 1; fi
-		setupDirsrvInstance # Install if directory doesn't exist
-		EXTRACT_DIR=$(mktemp -d)
-		(cd $EXTRACT_DIR && tar xjvf "$2") || exit $?
-		chown -R root:nobody $EXTRACT_DIR && chmod -R 770 $EXTRACT_DIR
-		BACKUP_TMP_DIR=$EXTRACT_DIR/$(ls $EXTRACT_DIR)
-		ERROR=0
-		for LDIF in $(ls $BACKUP_TMP_DIR | grep -E '\.ldif$'); do
-			NAMES=$(echo $LDIF | sed -e 's/\.ldif$//')
-			DB_NAME=$(echo $NAMES | cut -d - -f 2)
-			ns-slapd ldif2db -D /etc/dirsrv/slapd-$INSTANCE_ID -n $DB_NAME -i $BACKUP_TMP_DIR/$LDIF || ERROR=$?
-		done
-		rm -rf $EXTRACT_DIR
-		exit $ERROR
+	backup)
+		$@
 	;;
 	*)
 		exec "$@"

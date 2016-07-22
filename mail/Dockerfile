@@ -12,7 +12,7 @@ ENV SYSLOG_MARK_INTERVAL 60
 
 # Add user
 RUN addgroup -g 5000 vmail && \
-    adduser -u 5000 -S -G vmail vmail
+    adduser -u 5000 -S -D -G vmail vmail -h /var/mail -H -s /sbin/nologin
 
 # Install rsyslog, postfix and dovecot + ldap integration
 RUN apk add --no-cache --update rsyslog postfix postfix-ldap dovecot dovecot-ldap
