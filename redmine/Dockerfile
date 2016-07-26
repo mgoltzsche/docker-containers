@@ -3,10 +3,10 @@ FROM ruby:2.2-alpine
 MAINTAINER "Max Goltzsche" <max.goltzsche@algorythm.de>
 
 # Create redmine user and group
-RUN addgroup redmine && adduser -S -G redmine redmine
+RUN addgroup redmine && adduser -S -D -G redmine redmine -h /redmine -H -s /sbin/nologin
 
-# Add required libraries
-RUN apk add --no-cache --update libstdc++ libxml2 libxslt zlib imagemagick sqlite-libs libpq sqlite postgresql-client git
+# Add required binaries/libraries (use only pg_dump binary from postgresql package)
+RUN apk add --update --no-cache libstdc++ libxml2 libxslt zlib imagemagick sqlite-libs libpq sqlite postgresql-client git
 
 # Add gosu for easy step-down from root
 # and tini for signal processing (graceful container termination) and zombie killing
@@ -14,7 +14,7 @@ RUN apk add --no-cache --update libstdc++ libxml2 libxslt zlib imagemagick sqlit
 ENV GOSU_VERSION 1.7
 ENV TINI_VERSION v0.9.0
 RUN set -x \
-	&& apk add --no-cache --update gnupg \
+	&& apk add --update --no-cache gnupg \
 	&& curl -fSL -o /usr/local/bin/gosu "https://github.com/tianon/gosu/releases/download/$GOSU_VERSION/gosu-amd64" \
 	&& curl -fSL -o /usr/local/bin/gosu.asc "https://github.com/tianon/gosu/releases/download/$GOSU_VERSION/gosu-amd64.asc" \
 	&& export GNUPGHOME="$(mktemp -d)" \
@@ -71,7 +71,7 @@ RUN NOKOGIRI_VERSION=$(cat /redmine/Gemfile /redmine/plugins/*/Gemfile 2>/dev/nu
 		postgresql-dev \
 		sqlite-dev \
 	' \
-	&& apk add --no-cache --update $BUILD_DEPS \
+	&& apk add --update --no-cache $BUILD_DEPS \
 	&& set -ex \
 	&& gem install nokogiri -v "$NOKOGIRI_VERSION" -- --use-system-libraries \
 	&& echo 'gem "remote_syslog_logger", "~> 1.0.3"' >> Gemfile \
@@ -87,6 +87,11 @@ RUN NOKOGIRI_VERSION=$(cat /redmine/Gemfile /redmine/plugins/*/Gemfile 2>/dev/nu
 
 # Disable backlog card labels
 RUN echo '--- {}' > plugins/redmine_backlogs/lib/labels/labels.yaml
+
+RUN apk add --update --no-cache postgresql \
+	&& cp /usr/bin/pg_dump /usr/bin/pg_dump_bak \
+	&& apk del --purge postgresql \
+	&& mv /usr/bin/pg_dump_bak /usr/bin/pg_dump
 
 VOLUME /redmine/files
 EXPOSE 3000

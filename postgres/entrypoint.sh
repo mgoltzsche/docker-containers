@@ -27,7 +27,7 @@ setupPostgres() {
 		eval "gosu postgres initdb $PG_INITDB_ARGS" || exit 1
 	fi
 
-	# Start postgres locally for user and DB setup or migration
+	# Start postgres locally for user and DB setup
 	gosu postgres postgres -c listen_addresses=localhost &
 
 	# Wait for postgres start
@@ -77,7 +77,38 @@ setupPostgres() {
 		fi
 	fi
 
-	terminatePostgres
+	terminatePid $(postgresPid)
+}
+
+backup() {
+	# TODO: secure db access via this server especially for postgres user
+	if [ $# -eq 0 ]; then
+		echo "Please specify database, username and password in the next 3 lines" >&2
+		read DB_DATABASE
+		read DB_USERNAME
+		read DB_PASSWORD
+	else
+		DB_DATABASE="$1"
+		DB_USERNAME="$2"
+		DB_PASSWORD="$3"
+	fi
+	echo "Dumping database $DB_DATABASE" >&2
+	# TODO: disallow local login without password since due to proxy access for everybody is granteds
+	echo "$DB_PASSWORD" | pg_dump -h localhost -p 5432 -U "$DB_USERNAME" -W \
+		--inserts --blobs --no-tablespaces --no-owner --no-privileges \
+		--disable-triggers --disable-dollar-quoting --serializable-deferrable \
+		"$DB_DATABASE" | bzip2
+}
+
+startBackupServer() {
+	echo "Starting backup server on port 5433"
+	nc -lk -s 0.0.0.0 -p 5433 -e /entrypoint.sh backup &
+	BACKUP_SERVER_PID=$!
+}
+
+backupClient() {
+	# TODO: exit with correct status code (maybe check success by comparing last line)
+	printf 'redmine\nredmine\nRedmine Secret123' | nc -w 3 localhost 5433
 }
 
 startRsyslog() {
@@ -88,10 +119,11 @@ startRsyslog() {
 	fi
 
 	cat > /etc/rsyslog.conf <<-EOF
-		\$ModLoad imuxsock.so # provides support for local system logging (e.g. via logger command)
+		\$ModLoad imuxsock.so # provides local unix socket under /dev/log
 		\$ModLoad omstdout.so # provides messages to stdout
+		\$template stdoutfmt,"%syslogtag% %msg%\n" # light stdout format
 
-		*.* :omstdout: # send everything to stdout
+		*.* :omstdout:;stdoutfmt # send everything to stdout
 		$SYSLOG_FORWARDING_CFG
 	EOF
 	[ $? -eq 0 ] || exit 1
@@ -104,53 +136,55 @@ startRsyslog() {
 }
 
 postgresPid() {
-	ps -o pid,comm | grep -Em1 '^\s*\d+\s+(gosu\s+)?postgres' | grep -Eo '\d+'
+	cat "$PGDATA/postmaster.pid" 2>/dev/null | head -1
 }
 
 isProcessTerminated() {
-	! ps -o pid | grep -q ${1:-0}
+	! ps -o pid | grep -wq ${1:-0}
 }
 
 awaitTermination() {
 	awaitSuccess '' isProcessTerminated $1
 }
 
-terminatePostgres() {
-	while [ "$(postgresPid)" ]; do
-		POSTGRES_PID=$(postgresPid)
-		kill $POSTGRES_PID 2>/dev/null
-		awaitTermination $POSTGRES_PID
-	done
-}
-
-terminateRsyslog() {
-	kill $SYSLOG_PID 2>/dev/null
-	awaitTermination $SYSLOG_PID
+terminatePid() {
+	kill $1 2>/dev/null
+	awaitTermination $1
 }
 
 terminateGracefully() {
 	trap : SIGHUP SIGINT SIGQUIT SIGTERM # Disable termination call on signal to avoid infinite recursion
-	terminatePostgres
-	terminateRsyslog
+	terminatePid $BACKUP_SERVER_PID
+	terminatePid $(postgresPid)
+	terminatePid $SYSLOG_PID
 	exit 0
 }
 
 isPostgresSpawned() {
-	$CHILD_PID
 	ps -o comm | grep -Eq '^postgres$'
 }
 
-# Register signal handler for orderly shutdown
-trap terminateGracefully SIGHUP SIGINT SIGQUIT SIGTERM
-
-if [ "$1" = 'postgres' ]; then
-	startRsyslog
-	setupPostgres
-	(
-		gosu postgres $@
-		terminateRsyslog
-	) &
-	wait
-else
-	exec "$@"
-fi
+case "$1" in
+	postgres)
+		# Register signal handler for orderly shutdown
+		trap terminateGracefully SIGHUP SIGINT SIGQUIT SIGTERM || exit 1
+		startRsyslog
+		setupPostgres
+		if ! isProcessTerminated "$(postgresPid)"; then
+			echo 'Postgres is already running' >&2
+			exit 1
+		fi
+		(
+			gosu postgres $@
+			terminateGracefully
+		) &
+		startBackupServer
+		wait
+	;;
+	backup)
+		$@ || exit $?
+	;;
+	*)
+		exec "$@"
+	;;
+esac

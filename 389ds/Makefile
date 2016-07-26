@@ -9,7 +9,7 @@ build:
 run:
 	# Run container
 	docker run -h ldap.algorythm.de -p "389:389" \
-		-v "/home/max/development/docker-containers/389ds/work:/work" \
+		-v "/home/max/development/docker-containers/389ds/work:/backup" \
 		-e "LDAP_INSTALL_BACKUP_FILE=/backup/ldap-bak.tar.bz2" \
 		-e "LDAP_ROOT_DN_PWD=SecretLdapMasterPwd" \
 		-e "LDAP_USER_DN_REDMINE=cn=redmine,ou=Special Users,dc=algorythm,dc=de" \

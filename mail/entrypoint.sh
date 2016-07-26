@@ -58,11 +58,11 @@ setupRsyslog() {
 	fi
 
 	cat > /etc/rsyslog.conf <<-EOF
-		\$ModLoad immark.so # provides --MARK-- message capability
-		\$ModLoad imuxsock.so # provides support for local system logging (e.g. via logger command)
+		\$ModLoad imuxsock.so # provides local unix socket under /dev/log
 		\$ModLoad omstdout.so # provides messages to stdout
+		\$template stdoutfmt,"%syslogtag% %msg%\n" # light stdout format
 
-		*.* :omstdout: # send everything to stdout
+		*.* :omstdout:;stdoutfmt # send everything to stdout
 		$RSYSLOG_FORWARDING_CFG
 	EOF
 	[ $? -eq 0 ] || exit 1

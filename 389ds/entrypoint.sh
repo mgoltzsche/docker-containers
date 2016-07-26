@@ -112,17 +112,19 @@ setupSystemUsers() {
 				# Reset user password
 				echo "Resetting LDAP user's password: $LDAP_USER_DN"
 				LDAP_CHANGE_CMD=ldapmodify
-				LDIF=<<-EOF
+				LDIF="$(cat <<-EOF
 					dn: $LDAP_USER_DN
 					changetype: modify
 					replace: userPassword
 					userPassword:: $LDAP_USER_PW_HASH
 				EOF
+				)"
+				[ $? -eq 0 ] || exit 1
 			else
 				# Create user if not exists
 				echo "Adding LDAP user $LDAP_USER_DN"
 				LDAP_CHANGE_CMD=ldapadd
-				LDIF=<<-EOF
+				LDIF="$(cat <<-EOF
 					dn: $LDAP_USER_DN
 					objectClass: applicationProcess
 					objectClass: simpleSecurityObject
@@ -133,9 +135,10 @@ setupSystemUsers() {
 					mailForwardingAddress: max.goltzsche@algorythm.de
 					userPassword:: $LDAP_USER_PW_HASH
 				EOF
+				)"
+				[ $? -eq 0 ] || exit 1
 			fi
-
-			$LDAP_CHANGE_CMD $LDAP_OPTS <<< "$LDIF" || (echo "$LDIF">&2;false) || exit 1
+			$LDAP_CHANGE_CMD $LDAP_OPTS >/dev/null <<< "$LDIF" || (echo "$LDIF">&2;false) || exit 1
 		done
 	fi
 }
@@ -159,7 +162,8 @@ waitForTcpService() {
 
 setupSlapdLogging() {
 	waitForTcpService localhost $LDAP_SERVER_PORT
-	ldapmodify $LDAP_OPTS <<-EOF
+	echo "Configuring slapd syslog logging"
+	ldapmodify $LDAP_OPTS >/dev/null <<-EOF
 		dn: cn=config
 		changetype: modify
 		replace: nsslapd-logging-backend
@@ -169,6 +173,36 @@ setupSlapdLogging() {
 		nsslapd-accesslog-logbuffering: off
 	EOF
 	[ $? -eq 0 ] || exit 1
+}
+
+startRsyslog() {
+	# Configure syslog forwarding and wait for remote syslog server
+	RSYSLOG_FORWARDING_CFG=
+	if [ "$SYSLOG_REMOTE_ENABLED" = 'true' ]; then
+		# TODO: Wait for remote syslog
+		#awaitSuccess "Waiting for remote syslog UDP server $SYSLOG_HOST:$SYSLOG_PORT" nc -uzvw1 "$SYSLOG_HOST" "$SYSLOG_PORT" 2>/dev/null
+		RSYSLOG_FORWARDING_CFG="*.* @$SYSLOG_HOST:$SYSLOG_PORT"
+	fi
+
+	# Write rsyslog config
+	cat > /etc/rsyslog.conf <<-EOF
+		\$ModLoad imuxsock.so # provides local unix socket under /dev/log
+		\$ModLoad omstdout.so # provides messages to stdout
+		\$template stdoutfmt,"%syslogtag% %msg%\n" # light stdout format
+
+		*.* :omstdout:;stdoutfmt # send everything to stdout
+		$RSYSLOG_FORWARDING_CFG
+	EOF
+	[ $? -eq 0 ] || exit 1
+	chmod 444 /etc/rsyslog.conf || exit 1
+
+	# Start rsyslog
+	(
+		rsyslogd -n -f /etc/rsyslog.conf
+		terminateGracefully # Terminate whole container if syslogd somehow terminates
+	) &
+	awaitSuccess 'Waiting for local rsyslog' [ -S /dev/log ]
+	rm -rf $INSTANCE_LOG_DIR/*
 }
 
 backup() {
@@ -207,35 +241,6 @@ restore() {
 	done
 	rm -rf $EXTRACT_DIR
 	return $ERROR
-}
-
-startRsyslog() {
-	# Configure syslog forwarding and wait for remote syslog server
-	RSYSLOG_FORWARDING_CFG=
-	if [ "$SYSLOG_REMOTE_ENABLED" = 'true' ]; then
-		# TODO: Wait for remote syslog
-		#awaitSuccess "Waiting for remote syslog UDP server $SYSLOG_HOST:$SYSLOG_PORT" nc -uzvw1 "$SYSLOG_HOST" "$SYSLOG_PORT" 2>/dev/null
-		RSYSLOG_FORWARDING_CFG="*.* @$SYSLOG_HOST:$SYSLOG_PORT"
-	fi
-
-	# Write rsyslog config
-	cat > /etc/rsyslog.conf <<-EOF
-		\$ModLoad imuxsock.so # provides support for local system logging (e.g. via logger command)
-		\$ModLoad omstdout.so # provides messages to stdout
-
-		*.* :omstdout: # send everything to stdout
-		$RSYSLOG_FORWARDING_CFG
-	EOF
-	[ $? -eq 0 ] || exit 1
-	chmod 444 /etc/rsyslog.conf || exit 1
-
-	# Start rsyslog
-	(
-		rsyslogd -n -f /etc/rsyslog.conf
-		terminateGracefully # Terminate whole container if syslogd somehow terminates
-	) &
-	awaitSuccess 'Waiting for local rsyslog' [ -S /dev/log ]
-	rm -rf $INSTANCE_LOG_DIR/*
 }
 
 slapdPID() {

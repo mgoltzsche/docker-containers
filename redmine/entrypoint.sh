@@ -53,6 +53,17 @@ case "$DB_ADAPTER" in
 		;;
 esac
 
+backup() {
+	# TODO: fix
+	#DB_HOST=postgres; DB_PORT=5432; DB_USERNAME=redmine; gosu redmine pg_dump -h $DB_HOST -p $DB_PORT -U $DB_USERNAME -w --inserts --blobs --no-tablespaces --no-owner --no-privileges --disable-triggers --disable-dollar-quoting --serializable-deferrable
+	pg_dump -h $DB_HOST -p $DB_PORT -U $DB_USERNAME -w --inserts --blobs --no-tablespaces --no-owner --no-privileges --disable-triggers --disable-dollar-quoting --serializable-deferrable
+}
+
+restore() {
+	# TODO: psql call + database drop/create
+	false
+}
+
 waitForTcpService() {
 	until nc -zvw1 "$1" "$2" 2>/dev/null; do
 		echo "Waiting for TCP service $1:$2" >&2
@@ -83,6 +94,9 @@ case "$1" in rails|thin|rake)
 		  database: "$DB_DATABASE"
 		  encoding: "$DB_ENCODING"
 	YML
+
+	gosu redmine echo > /redmine/.pgpass "$DB_HOST:$DB_PORT:$DB_DATABASE:$DB_USERNAME:$DB_PASSWORD" &&
+	chmod 0600 /redmine/.pgpass || exit 1
 
 	# Write mail config
 	if [ "$SMTP_ENABLED" = 'true' ]; then
@@ -220,20 +234,21 @@ case "$1" in rails|thin|rake)
 				(echo "Failed to update LDAP auth source $LDAP_AUTH_NAME"; exit 11)
 		fi
 
-		LDAP_CHECK="
-require 'rubygems'
-require 'net/ldap'
-ldap = Net::LDAP.new
-ldap.host = '$LDAP_HOST'
-ldap.port = $LDAP_PORT
-ldap.auth '$LDAP_USER_DN', '$LDAP_USER_PW'
-ldap.bind
-ldap.search( :base => '$LDAP_USER_DN' ) do |entry|
-  print 'found'
-  exit 0
-end
-exit 1
-"
+		LDAP_CHECK="$(cat <<-EOF
+			require 'rubygems'
+			require 'net/ldap'
+			ldap = Net::LDAP.new
+			ldap.host = '$LDAP_HOST'
+			ldap.port = $LDAP_PORT
+			ldap.auth '$LDAP_USER_DN', '$LDAP_USER_PW'
+			ldap.bind
+			ldap.search( :base => '$LDAP_USER_DN' ) do |entry|
+			  print 'found'
+			  exit 0
+			end
+			exit 1
+		EOF
+		)"
 		until echo "$LDAP_CHECK" | ruby; do
 			echo "Waiting for available LDAP server $LDAP_HOST:$LDAP_PORT and user $LDAP_USER_DN" >&2
 			sleep 1
