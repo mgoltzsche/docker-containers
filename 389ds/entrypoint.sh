@@ -176,6 +176,7 @@ setupSlapdLogging() {
 }
 
 startRsyslog() {
+	ps h -o pid -C rsyslogd >/dev/null && return 1
 	# Configure syslog forwarding and wait for remote syslog server
 	RSYSLOG_FORWARDING_CFG=
 	if [ "$SYSLOG_REMOTE_ENABLED" = 'true' ]; then
@@ -259,17 +260,15 @@ terminateGracefully() {
 
 case "$1" in
 	ns-slapd|ldapmodify|ldapadd|ldapdelete|ldapsearch)
-		setupDirsrvInstance # Install if directory doesn't exist
-		startRsyslog
+		[ $(ps aux | grep -c '') -le 5 ] && rm -f /var/run/syslogd.pid # Removes old syslog pid on container start
+		setupDirsrvInstance # Installs if directory doesn't exist
+		startRsyslog # Starts if not started
 		CMD="$1"
 		shift
 		SLAPD_ARGS=
 		if [ "$CMD" = ns-slapd ]; then
 			SLAPD_ARGS=$@
-			if [ "$(slapdPID)" ]; then
-				echo "server is already running" >&2
-				exit 1
-			fi
+			[ ! "$(slapdPID)" ] || (echo "ns-slapd is already running" >&2; false) || exit 1
 		fi
 		if [ ! "$(slapdPID)" ]; then
 			[ ! "$FIRST_START" -a ! "$LDAP_INSTALL_BACKUP_FILE" ] || restore "$LDAP_INSTALL_BACKUP_FILE" || exit 1
@@ -278,7 +277,7 @@ case "$1" in
 			setupSystemUsers || exit 1
 		fi
 
-		trap terminateGracefully SIGHUP SIGINT SIGQUIT SIGTERM # Register signal handler for orderly shutdown
+		trap terminateGracefully SIGHUP SIGINT SIGQUIT SIGTERM # Register signal handler for graceful shutdown
 
 		if [ "$CMD" = ns-slapd ]; then # LDAP operations
 			wait

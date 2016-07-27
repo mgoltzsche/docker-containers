@@ -21,10 +21,10 @@ isPostgresStarted() {
 setupPostgres() {
 	FIRST_START=
 	if [ ! -s "$PGDATA/PG_VERSION" ]; then
-		# Create initial database directory
+		# Create initial database directory (enforcing authentication in TCP connections)
 		FIRST_START='true'
 		echo "Setting up initial database in $PGDATA"
-		eval "gosu postgres initdb $PG_INITDB_ARGS" || exit 1
+		eval "gosu postgres initdb $PG_INITDB_ARGS --auth-host=md5" || exit 1
 	fi
 
 	# Start postgres locally for user and DB setup
@@ -83,32 +83,39 @@ setupPostgres() {
 backup() {
 	# TODO: secure db access via this server especially for postgres user
 	if [ $# -eq 0 ]; then
-		echo "Please specify database, username and password in the next 3 lines" >&2
 		read DB_DATABASE
 		read DB_USERNAME
 		read DB_PASSWORD
-	else
+	elif [ $# -eq 3 ]; then
 		DB_DATABASE="$1"
 		DB_USERNAME="$2"
 		DB_PASSWORD="$3"
+	else
+		echo "Usage: backup DATABASE USERNAME PASSWORD" >&2
+		return 1
 	fi
 	echo "Dumping database $DB_DATABASE" >&2
-	# TODO: disallow local login without password since due to proxy access for everybody is granteds
-	echo "$DB_PASSWORD" | pg_dump -h localhost -p 5432 -U "$DB_USERNAME" -W \
+	# Dump via TCP to enforce authentication
+	export PGPASSWORD="$DB_PASSWORD"
+	pg_dump -h localhost -p 5432 -U "$DB_USERNAME" \
 		--inserts --blobs --no-tablespaces --no-owner --no-privileges \
 		--disable-triggers --disable-dollar-quoting --serializable-deferrable \
-		"$DB_DATABASE" | bzip2
+		"$DB_DATABASE"
+	unset PGPASSWORD
 }
 
 startBackupServer() {
+	# Backup server required because pg_dump must be of same version as postgres
+	# which may not be available in most other containers (e.g. redmine).
+	# ATTENTION: Use backup server only in local net since it is unencrypted.
 	echo "Starting backup server on port 5433"
 	nc -lk -s 0.0.0.0 -p 5433 -e /entrypoint.sh backup &
 	BACKUP_SERVER_PID=$!
 }
 
 backupClient() {
-	# TODO: exit with correct status code (maybe check success by comparing last line)
-	printf 'redmine\nredmine\nRedmine Secret123' | nc -w 3 localhost 5433
+	# TODO: check for line '-- PostgreSQL database dump complete'
+	printf 'redmine\nredmine\nredminesecret' | nc -w 3 localhost 5433
 }
 
 startRsyslog() {
