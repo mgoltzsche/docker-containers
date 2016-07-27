@@ -260,7 +260,7 @@ terminateGracefully() {
 
 case "$1" in
 	ns-slapd|ldapmodify|ldapadd|ldapdelete|ldapsearch)
-		[ $(ps aux | grep -c '') -le 5 ] && rm -f /var/run/syslogd.pid # Removes old syslog pid on container start
+		[ $(ps aux | grep -c '') -le 5 ] && rm -f /var/run/rsyslogd.pid # Removes old syslog pid on container start
 		setupDirsrvInstance # Installs if directory doesn't exist
 		startRsyslog # Starts if not started
 		CMD="$1"
