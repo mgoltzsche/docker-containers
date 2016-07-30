@@ -3,7 +3,10 @@
 SYSLOG_REMOTE_ENABLED=${SYSLOG_REMOTE_ENABLED:=false}
 SYSLOG_HOST=${SYSLOG_HOST:=syslog}
 SYSLOG_PORT=${SYSLOG_PORT:=514}
+PG_ENCODING=${PG_ENCODING:=utf8}
 
+# Runs the provided command until it succeeds.
+# Takes the error message to be displayed if it doesn't succeed as first argument.
 awaitSuccess() {
 	MSG="$1"
 	shift
@@ -13,17 +16,21 @@ awaitSuccess() {
 	done
 }
 
+# Tests if postgres has been started (before we can continue configuration)
 isPostgresStarted() {
 	ps -o pid | grep -Eq "^\s*$1\$" || exit 1
 	gosu postgres psql -c 'SELECT 1'
 }
 
+# Configures postgres on first container start.
+# Every container start it creates/updates users + dbs and runs init scripts.
 setupPostgres() {
 	FIRST_START=
 	if [ ! -s "$PGDATA/PG_VERSION" ]; then
-		# Create initial database directory (enforcing authentication in TCP connections)
+		# Create initial database directory
 		FIRST_START='true'
 		echo "Setting up initial database in $PGDATA"
+		# --auth-host=md5 forces password authentication for TCP connections
 		eval "gosu postgres initdb $PG_INITDB_ARGS --auth-host=md5" || exit 1
 	fi
 
@@ -56,7 +63,7 @@ setupPostgres() {
 		# Create user database
 		if ! gosu postgres psql -lqt | cut -d \| -f 1 | grep -qw "$PG_USER_DATABASE"; then
 			echo "Adding PostgreSQL database: $PG_USER_DATABASE"
-			gosu postgres createdb -T template0 -O "$PG_USER" "$PG_USER_DATABASE" || exit 1
+			createDB "$PG_USER_DATABASE" "$PG_USER" || exit 1
 		fi
 	done
 
@@ -80,34 +87,72 @@ setupPostgres() {
 	terminatePid $(postgresPid)
 }
 
-backup() {
-	# TODO: secure db access via this server especially for postgres user
-	if [ $# -eq 0 ]; then
-		read DB_DATABASE
-		read DB_USERNAME
-		read DB_PASSWORD
-	elif [ $# -eq 3 ]; then
-		DB_DATABASE="$1"
-		DB_USERNAME="$2"
-		DB_PASSWORD="$3"
-	else
-		echo "Usage: backup DATABASE USERNAME PASSWORD" >&2
-		return 1
-	fi
-	echo "Dumping database $DB_DATABASE" >&2
-	# Dump via TCP to enforce authentication
-	export PGPASSWORD="$DB_PASSWORD"
-	pg_dump -h localhost -p 5432 -U "$DB_USERNAME" \
-		--inserts --blobs --no-tablespaces --no-owner --no-privileges \
-		--disable-triggers --disable-dollar-quoting --serializable-deferrable \
-		"$DB_DATABASE"
-	unset PGPASSWORD
+createDB() {
+	gosu postgres createdb -T template0 -O "$2" -E "$PG_ENCODING" "$1"
 }
 
+# Executes a backup task.
+# (Maybe called locally or remotely by backup server)
+backup() {
+	if [ $# -eq 0 ]; then
+		read CMD_RECEIVED
+		read CMD_DATABASE
+		read CMD_USERNAME
+		read CMD_PASSWORD
+	elif [ $# -eq 4 -o $# -eq 5 ]; then
+		CMD_RECEIVED="$1"
+		CMD_DATABASE="$2"
+		CMD_USERNAME="$3"
+		CMD_PASSWORD="$4"
+	fi
+	[ ! "$CMD_USERNAME" = postgres ] || (echo "postgres user not allowed in backup script" >&2; false) || return 1
+	case "$CMD_RECEIVED" in
+		dump-plain)
+			echo "Dumping database $CMD_DATABASE" >&2
+			# Dump via TCP to enforce authentication (configured with initdb --auth-host=md5)
+			STATUS=0
+			export PGPASSWORD="$CMD_PASSWORD"
+			# maybe add -O
+			pg_dump -h localhost -p 5432 -U "$CMD_USERNAME" -E $PG_ENCODING -n public -O \
+				--inserts --blobs --no-tablespaces --no-owner --no-privileges \
+				--disable-triggers --disable-dollar-quoting --serializable-deferrable \
+				"$CMD_DATABASE" || STATUS=1
+			unset PGPASSWORD
+			return $STATUS
+		;;
+		restore-plain)
+			STATUS=0
+			export PGPASSWORD="$CMD_PASSWORD"
+			(psql -h localhost -p 5432 -U "$CMD_USERNAME" "$CMD_DATABASE" -X -c 'SELECT 1' || (echo "Invalid credentials"; false)) &&
+			echo "Restoring database $CMD_DATABASE" >&2 &&
+			gosu postgres dropdb "$CMD_DATABASE" &&
+			createDB "$CMD_DATABASE" "$CMD_USERNAME" || STATUS=1
+			if [ $STATUS -eq 0 ]; then
+				if [ $# -eq 5 ]; then
+					CMD_FILE="$5"
+					([ ! "$CMD_FILE" ] || [ ! -f "$CMD_FILE" ] || (echo "SQL restore file does not exist: $CMD_FILE" >&2; false)) &&
+					cat "$CMD_FILE" | psql -h localhost -p 5432 -U "$CMD_USERNAME" "$CMD_DATABASE" -X -v ON_ERROR_STOP=1 || STATUS=1
+				else
+					psql -h localhost -p 5432 -U "$CMD_USERNAME" "$CMD_DATABASE" -X -v ON_ERROR_STOP=1 &&
+					echo "Restored successfully" || STATUS=1
+				fi
+			fi
+			unset PGPASSWORD
+			return $STATUS
+		;;
+		*)
+			echo "Unsupported command: $CMD_RECEIVED"
+			echo "Usage: backup dump-plain DATABASE USERNAME PASSWORD" >&2
+			return 1
+		;;
+	esac
+}
+
+# Starts a TCP server that performs db backup tasks for another container.
+# Backup server required because pg_dump must be of same version as postgres
+# which may not be available in most other containers (e.g. redmine).
+# ATTENTION: Use backup server only in local net since it is unencrypted.
 startBackupServer() {
-	# Backup server required because pg_dump must be of same version as postgres
-	# which may not be available in most other containers (e.g. redmine).
-	# ATTENTION: Use backup server only in local net since it is unencrypted.
 	echo "Starting backup server on port 5433"
 	nc -lk -s 0.0.0.0 -p 5433 -e /entrypoint.sh backup &
 	BACKUP_SERVER_PID=$!
@@ -115,9 +160,10 @@ startBackupServer() {
 
 backupClient() {
 	# TODO: check for line '-- PostgreSQL database dump complete'
-	printf 'redmine\nredmine\nredminesecret' | nc -w 3 localhost 5433
+	printf 'dump-plain\nredmine\nredmine\nredminesecret' | nc -w 3 localhost 5433
 }
 
+# Starts a local syslog server to collect and forward postgres logs.
 startRsyslog() {
 	SYSLOG_FORWARDING_CFG=
 	if [ "$SYSLOG_REMOTE_ENABLED" = 'true' ]; then
@@ -142,33 +188,34 @@ startRsyslog() {
 	awaitSuccess 'Waiting for local rsyslog' [ -S /dev/log ]
 }
 
+# Provides postgres' current PID
 postgresPid() {
 	cat "$PGDATA/postmaster.pid" 2>/dev/null | head -1
 }
 
+# Tests if the provided PID is terminated
 isProcessTerminated() {
 	! ps -o pid | grep -wq ${1:-0}
 }
 
+# Waits until the provided PID is terminated
 awaitTermination() {
 	awaitSuccess '' isProcessTerminated $1
 }
 
+# Terminates the provided PID and waits until it is terminated
 terminatePid() {
 	kill $1 2>/dev/null
 	awaitTermination $1
 }
 
+# Terminates the whole container orderly
 terminateGracefully() {
-	trap : SIGHUP SIGINT SIGQUIT SIGTERM # Disable termination call on signal to avoid infinite recursion
+	trap : SIGHUP SIGINT SIGQUIT SIGTERM # Unregister signal handler to avoid infinite recursion
 	terminatePid $BACKUP_SERVER_PID
 	terminatePid $(postgresPid)
 	terminatePid $SYSLOG_PID
 	exit 0
-}
-
-isPostgresSpawned() {
-	ps -o comm | grep -Eq '^postgres$'
 }
 
 case "$1" in
@@ -177,10 +224,7 @@ case "$1" in
 		trap terminateGracefully SIGHUP SIGINT SIGQUIT SIGTERM || exit 1
 		startRsyslog
 		setupPostgres
-		if ! isProcessTerminated "$(postgresPid)"; then
-			echo 'Postgres is already running' >&2
-			exit 1
-		fi
+		isProcessTerminated "$(postgresPid)" || (echo 'Postgres is already running' >&2; false) || exit 1
 		(
 			gosu postgres $@
 			terminateGracefully

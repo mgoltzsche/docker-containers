@@ -176,7 +176,7 @@ setupSlapdLogging() {
 }
 
 startRsyslog() {
-	ps h -o pid -C rsyslogd >/dev/null && return 1
+	ps -C rsyslogd >/dev/null && return 1
 	# Configure syslog forwarding and wait for remote syslog server
 	RSYSLOG_FORWARDING_CFG=
 	if [ "$SYSLOG_REMOTE_ENABLED" = 'true' ]; then
@@ -198,6 +198,7 @@ startRsyslog() {
 	chmod 444 /etc/rsyslog.conf || exit 1
 
 	# Start rsyslog
+	rm -f /var/run/rsyslogd.pid
 	(
 		rsyslogd -n -f /etc/rsyslog.conf
 		terminateGracefully # Terminate whole container if syslogd somehow terminates
@@ -207,8 +208,8 @@ startRsyslog() {
 }
 
 backup() {
-	if [ ! "$1" ]; then echo "Usage: backup BACKUPFILE (tar.bz2)" >&2; return 1; fi
-	if [ -f "$1" ] || [ -d "$1" ]; then echo "Backup destination file $1 already exists" >&2; return 1; fi
+	([ "$1" ] || (echo "Usage: backup BACKUPFILE (tar.bz2)" >&2; false)) &&
+	(([ ! -f "$1" ] && [ ! -d "$1" ]) || (echo "Backup destination file $1 already exists" >&2; false)) || exit 1
 	ERROR=0
 	BACKUP_ID="ldap_${INSTANCE_ID}_$(date +'%y-%m-%d_%H-%M-%S')"
 	BACKUP_TMP_DIR=/tmp/$BACKUP_ID
@@ -219,28 +220,31 @@ backup() {
 	for DB_NAME in $(find /var/lib/dirsrv/slapd-$INSTANCE_ID/db/ -mindepth 1 -maxdepth 1 -type d | xargs -n 1 basename); do
 		ns-slapd db2ldif -D /etc/dirsrv/slapd-$INSTANCE_ID -n $DB_NAME -a "$BACKUP_TMP_DIR/$INSTANCE_ID-$DB_NAME.ldif" || ERROR=$?
 	done
-	(cd /tmp && tar cjf "$1" $BACKUP_ID)
+	tar -cjvf "$1" -C /tmp $BACKUP_ID
 	ERROR=$?
 	rm -rf $BACKUP_TMP_DIR
-	[ "$ERROR" -eq 0 ]
+	return $ERROR
 }
 
 restore() {
-	if [ ! "$1" ]; then echo "Usage: restore BACKUPFILE (tar.bz2)" >&2; exit 1; fi
-	if [ ! -f "$1" ]; then echo "Backup file $1 does not exist" >&2; exit 1; fi
-	if [ "$(slapdPID)" ]; then echo "You must terminate ns-slapd before you can restore dump" >&2; exit 1; fi
+	([ "$1" ] || (echo "Usage: restore BACKUPFILE (tar.bz2)" >&2; false)) &&
+	([ -f "$1" ] || (echo "Backup file $1 does not exist" >&2; false)) &&
+	([ ! "$(slapdPID)" ] || (echo "You must terminate ns-slapd before you can restore dump" >&2; false)) || exit 1
+	echo "Restoring backup $1"
 	setupDirsrvInstance # Install if directory doesn't exist
 	EXTRACT_DIR=$(mktemp -d)
-	(cd $EXTRACT_DIR && tar xjf "$1") || exit $?
-	BACKUP_DIR="$EXTRACT_DIR/$(ls $EXTRACT_DIR)"
+	tar -xjvf "$1" -C $EXTRACT_DIR || exit $?
+	BACKUP_DIR="$EXTRACT_DIR/$(ls $EXTRACT_DIR | head -1)"
 	chown -R root:nobody $EXTRACT_DIR && chmod -R 770 $EXTRACT_DIR
 	ERROR=0
 	for LDIF in $(ls "$BACKUP_DIR" | grep -E '\.ldif$'); do
 		NAMES=$(echo $LDIF | sed -e 's/\.ldif$//')
+		FOUND_LDIF=true
 		DB_NAME=$(echo $NAMES | cut -d - -f 2)
 		ns-slapd ldif2db -D /etc/dirsrv/slapd-$INSTANCE_ID -n $DB_NAME -i "$BACKUP_DIR/$LDIF" || exit 1
 	done
 	rm -rf $EXTRACT_DIR
+	[ "$FOUND_LDIF" ] || (echo "Invalid backup format"; false) || return 1
 	return $ERROR
 }
 
@@ -260,7 +264,6 @@ terminateGracefully() {
 
 case "$1" in
 	ns-slapd|ldapmodify|ldapadd|ldapdelete|ldapsearch)
-		[ $(ps aux | grep -c '') -le 5 ] && rm -f /var/run/rsyslogd.pid # Removes old syslog pid on container start
 		setupDirsrvInstance # Installs if directory doesn't exist
 		startRsyslog # Starts if not started
 		CMD="$1"

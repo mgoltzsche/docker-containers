@@ -5,7 +5,7 @@ MAINTAINER "Max Goltzsche" <max.goltzsche@algorythm.de>
 # Create redmine user and group
 RUN addgroup redmine && adduser -S -D -G redmine redmine -h /redmine -H -s /sbin/nologin
 
-# Add required binaries/libraries (use only pg_dump binary from postgresql package)
+# Add required binaries/libraries
 RUN apk add --update --no-cache libstdc++ libxml2 libxslt zlib imagemagick sqlite-libs libpq sqlite postgresql-client git
 
 # Add gosu for easy step-down from root
@@ -87,11 +87,6 @@ RUN NOKOGIRI_VERSION=$(cat /redmine/Gemfile /redmine/plugins/*/Gemfile 2>/dev/nu
 
 # Disable backlog card labels
 RUN echo '--- {}' > plugins/redmine_backlogs/lib/labels/labels.yaml
-
-RUN apk add --update --no-cache postgresql \
-	&& cp /usr/bin/pg_dump /usr/bin/pg_dump_bak \
-	&& apk del --purge postgresql \
-	&& mv /usr/bin/pg_dump_bak /usr/bin/pg_dump
 
 VOLUME /redmine/files
 EXPOSE 3000

@@ -31,6 +31,7 @@ SMTP_STARTTLS=${SMTP_STARTTLS:-false}
 SMTP_DOMAIN=$(hostname -d)
 DB_ADAPTER=${DB_ADAPTER:-sqlite3}
 DB_ENCODING=${DB_ENCODING:-utf8}
+DB_BACKUP_PORT=${DB_BACKUP_PORT:-5433}
 
 case "$DB_ADAPTER" in
 	postgresql)
@@ -53,32 +54,7 @@ case "$DB_ADAPTER" in
 		;;
 esac
 
-backup() {
-	# TODO: fix
-	#DB_HOST=postgres; DB_PORT=5432; DB_USERNAME=redmine; gosu redmine pg_dump -h $DB_HOST -p $DB_PORT -U $DB_USERNAME -w --inserts --blobs --no-tablespaces --no-owner --no-privileges --disable-triggers --disable-dollar-quoting --serializable-deferrable
-	pg_dump -h $DB_HOST -p $DB_PORT -U $DB_USERNAME -w --inserts --blobs --no-tablespaces --no-owner --no-privileges --disable-triggers --disable-dollar-quoting --serializable-deferrable
-}
-
-restore() {
-	# TODO: psql call + database drop/create
-	false
-}
-
-waitForTcpService() {
-	until nc -zvw1 "$1" "$2" 2>/dev/null; do
-		echo "Waiting for TCP service $1:$2" >&2
-		sleep 3
-	done
-}
-
-waitForUdpService() {
-	until nc -uzvw1 "$1" "$2" 2>/dev/null; do
-		echo "Waiting for UDP service $1:$2" >&2
-		sleep 3
-	done
-}
-
-case "$1" in rails|thin|rake)
+setupRedmine() {
 	echo 'Setting up redmine with:'
 	set | grep -E '^DB_|^LOG_LEVEL=|^SYSLOG_|^LDAP_|^SMTP_' | sed -E 's/(^[^=]+_(PASSWORD|PW)=).+/\1***/i' | xargs -n1 echo ' ' # Show variables
 	[ ! "$DB_ADAPTER" = 'sqlite3' ] || echo 'Warning: Using sqlite3 as redmine database' >&2
@@ -94,9 +70,6 @@ case "$1" in rails|thin|rake)
 		  database: "$DB_DATABASE"
 		  encoding: "$DB_ENCODING"
 	YML
-
-	gosu redmine echo > /redmine/.pgpass "$DB_HOST:$DB_PORT:$DB_DATABASE:$DB_USERNAME:$DB_PASSWORD" &&
-	chmod 0600 /redmine/.pgpass || exit 1
 
 	# Write mail config
 	if [ "$SMTP_ENABLED" = 'true' ]; then
@@ -129,10 +102,11 @@ case "$1" in rails|thin|rake)
 	YML
 
 	# Wait for syslog server
-	[ ! "$SYSLOG_REMOTE_ENABLED" = 'true' ] || waitForUdpService "$SYSLOG_HOST" "$SYSLOG_PORT"
+	[ ! "$SYSLOG_REMOTE_ENABLED" = 'true' ] \
+		|| awaitSuccess "Wait for remote syslog UDP server $SYSLOG_HOST:$SYSLOG_PORT" nc -uzvw1 "$SYSLOG_HOST" "$SYSLOG_PORT"
 
 	# Ensure the right database adapter is active in Gemfile.lock
-	bundle install --without development test || exit 1
+	bundle install --without development test || return 1
 
 	# Generate secret
 	if [ ! -s config/secrets.yml ]; then
@@ -142,7 +116,7 @@ case "$1" in rails|thin|rake)
 				  secret_key_base: "$REDMINE_SECRET_KEY_BASE"
 			YML
 		elif [ ! -f config/initializers/secret_token.rb ]; then
-			rake generate_secret_token || exit 2
+			rake generate_secret_token || return 1
 		fi
 	fi
 
@@ -156,7 +130,7 @@ case "$1" in rails|thin|rake)
 	# Migrate DB
 	if [ "$1" != 'rake' -a -z "$REDMINE_NO_DB_MIGRATE" ]; then
 		echo "Migrating database. Disable this by setting REDMINE_NO_DB_MIGRATE=true" >&2
-		gosu redmine rake db:migrate || exit 4
+		gosu redmine rake db:migrate || return 1
 	fi
 
 	# Insert Redmine default configuration
@@ -165,7 +139,7 @@ case "$1" in rails|thin|rake)
 		gosu redmine rake redmine:load_default_data &&
 		gosu redmine rake tmp:cache:clear &&
 		gosu redmine rake tmp:sessions:clear ||
-		exit 5
+		return 1
 	fi
 
 	# Install or migrate Redmine Backlogs plugin
@@ -175,7 +149,7 @@ case "$1" in rails|thin|rake)
 			story_trackers=Feature \
 			task_tracker=Task \
 			labels=false ||
-		exit 6
+		return 1
 		echo "Copying Feature workflow to Task workflow"
 		WORKFLOW_SQL="SELECT (SELECT id FROM trackers WHERE name='Task'),role_id,old_status_id,new_status_id FROM workflows WHERE type='WorkflowTransition' AND tracker_id=(SELECT id FROM trackers WHERE name='Feature');"
 		# Cannot use rails db --mode list since output is not supported when postgresql adapter is used
@@ -185,7 +159,7 @@ case "$1" in rails|thin|rake)
 			gosu redmine rails db -p 1>/dev/null ||
 		(echo "Failed to copy 'Feature' tracker workflow to 'Task' tracker workflow. You may have to create the workflow yourself to be able to interact with a backlogs task board" >&2; exit 7)
 	elif [ -z "$REDMINE_NO_DB_MIGRATE" ]; then # Migrate
-		gosu redmine rake redmine:plugins:migrate || exit 8
+		gosu redmine rake redmine:plugins:migrate || return 1
 	fi
 
 	# Configure host name
@@ -197,7 +171,7 @@ case "$1" in rails|thin|rake)
 		if [ -z "$HOST_NAME" ]; then
 			echo "Could not configure Redmine host name." >&2
 			echo "Please set REDMINE_HOST_NAME or configure a fully qualified system host name with e.g. docker's -h option." >&2
-			exit 9
+			return 1
 		fi
 
 		echo "INSERT INTO settings(name,value) VALUES('host_name','$HOST_NAME');" | gosu redmine rails db -p 1>/dev/null
@@ -215,7 +189,7 @@ case "$1" in rails|thin|rake)
 						'$LDAP_FILTER','$LDAP_ATTR_LOGIN','$LDAP_ATTR_MAIL',
 						'$LDAP_ATTR_FIRSTNAME','$LDAP_ATTR_LASTNAME',
 						'$LDAP_ONTHEFLY_REGISTER','$LDAP_TLS',$LDAP_TIMEOUT);" | gosu redmine rails db -p 1>/dev/null ||
-				(echo "Failed to insert LDAP auth source $LDAP_AUTH"; exit 10)
+				(echo "Failed to insert LDAP auth source $LDAP_AUTH"; return 1)
 		else
 			# Update existing auth source
 			echo "UPDATE auth_sources SET type='AuthSourceLdap',
@@ -231,7 +205,7 @@ case "$1" in rails|thin|rake)
 					onthefly_register='$LDAP_ONTHEFLY_REGISTER',
 					tls='$LDAP_TLS',timeout=$LDAP_TIMEOUT
 					WHERE name='$LDAP_AUTH';" | gosu redmine rails db -p 1>/dev/null ||
-				(echo "Failed to update LDAP auth source $LDAP_AUTH_NAME"; exit 11)
+				(echo "Failed to update LDAP auth source $LDAP_AUTH_NAME"; return 1)
 		fi
 
 		LDAP_CHECK="$(cat <<-EOF
@@ -243,7 +217,6 @@ case "$1" in rails|thin|rake)
 			ldap.auth '$LDAP_USER_DN', '$LDAP_USER_PW'
 			ldap.bind
 			ldap.search( :base => '$LDAP_USER_DN' ) do |entry|
-			  print 'found'
 			  exit 0
 			end
 			exit 1
@@ -251,20 +224,125 @@ case "$1" in rails|thin|rake)
 		)"
 		until echo "$LDAP_CHECK" | ruby; do
 			echo "Waiting for available LDAP server $LDAP_HOST:$LDAP_PORT and user $LDAP_USER_DN" >&2
-			sleep 1
+			sleep 3
 		done
 	fi
 
 	chown -R redmine:redmine files log public/plugin_assets
 	rm -f tmp/pids/server.pid
 
-	if [ "$SMTP_ENABLED" = 'true' ]; then
-		# Wait for mail server
-		waitForTcpService "$SMTP_HOST" "$SMTP_PORT"
-	fi
+	# Wait for mail server to start
+	[ ! "$SMTP_ENABLED" = 'true' ] \
+		|| awaitSuccess "Waiting for TCP service $SMTP_HOST:$SMTP_PORT" nc -zvw1 "$SMTP_HOST" "$SMTP_PORT"
+}
 
-	set -- gosu redmine "$@"
+backup() {
+	[ "$DB_ADAPTER" = postgresql ] || (echo "Works with postgresql only (algorythm container)" >&2; false) &&
+	[ "$1" ] || (echo "Usage backup DESTINATIONFILE" >&2; false) &&
+	[ ! -f "$1" ] || (echo "Backup file $1 already exists" >&2; false) || return 1
+	BACKUP_ID="redmine-backlogs_$(date +'%y-%m-%d_%H-%M-%S')" &&
+	BAK_TMP_DIR=$(mktemp -d) &&
+	BAK_DIR=$BAK_TMP_DIR/$BACKUP_ID &&
+	SQL_FILE=$BAK_DIR/redmine-postgres.sql &&
+	mkdir $BAK_DIR || (rm -rf $BAK_TMP_DIR; false) &&
+	sendDBBackupCommand dump-plain > $SQL_FILE &&
+	tail -3 $SQL_FILE | grep -qx '\-\- PostgreSQL database dump complete' &&
+	cp -r files $BAK_DIR/files &&
+	tar -cjf "$1" -C $BAK_TMP_DIR $BACKUP_ID \
+		|| (echo 'Dump failed' >&2; false)
+	STATUS=$?
+	rm -rf $BAK_TMP_DIR 2>/dev/null
+	return $STATUS
+}
+
+restore() {
+	([ "$DB_ADAPTER" = postgresql ] || (echo "Works with postgresql only (algorythm container)" >&2; false)) &&
+	echo $$ > /var/run/restore.pid &&
+	stopCommand &&
+	EXTRACT_DIR=$(mktemp -d) &&
+	tar -xjf "$1" -C $EXTRACT_DIR &&
+	BACKUP_ID="$(ls $EXTRACT_DIR | head -1)" &&
+	SQL_FILE="$EXTRACT_DIR/$BACKUP_ID/redmine-postgres.sql" &&
+	FILES_DIR="$EXTRACT_DIR/$BACKUP_ID/files" &&
+	(([ -f "$SQL_FILE" ] && [ -d "$FILES_DIR" ]) || (echo 'Invalid backup formmat' >&2; false)) &&
+	SQL_RESTORE_RESULT="$(sendDBBackupCommand restore-plain "$SQL_FILE")" &&
+	echo "$SQL_RESTORE_RESULT" >&2 &&
+	echo "$SQL_RESTORE_RESULT" | grep -qx 'Restored successfully' &&
+	rm -rf files/* &&
+	find "$FILES_DIR" -mindepth 1 -maxdepth 1 | while read FILE; do mv "$FILE" files || return 1; done
+	chown -R redmine:redmine files &&
+	REDMINE_NO_DB_MIGRATE= && # enforce DB migration after restored
+	setupRedmine
+	STATUS=$?
+	rm -rf $EXTRACT_DIR 2>/dev/null
+	rm -f /var/run/restore.pid
+	return $STATUS
+}
+
+sendDBBackupCommand() {
+	(
+		cat <<-EOF
+			$1
+			$DB_DATABASE
+			$DB_USERNAME
+			$DB_PASSWORD
+		EOF
+		[ ! "$2" ] || cat "$2"
+	) | nc $DB_HOST $DB_BACKUP_PORT
+}
+
+# Runs the provided command until it succeeds.
+# Takes the error message to be displayed if it doesn't succeed as first argument.
+awaitSuccess() {
+	MSG="$1"
+	shift
+	until $@ >/dev/null 2>/dev/null; do
+		[ ! "$MSG" ] || echo "$MSG" >&2
+		sleep 3
+	done
+}
+
+# Tests if the provided PID is terminated
+isProcessTerminated() {
+	! ps -o pid | grep -wq ${1:-0}
+}
+
+runCommand() {
+	RUN_COMMAND="$(cat /var/run/run-command)" &&
+	gosu redmine $RUN_COMMAND & # TODO: terminate on failure
+	echo $! > /var/run/run-command.pid
+	wait
+}
+
+stopCommand() {
+	CMD_PID="$(cat /var/run/run-command.pid 2>/dev/null)"
+	kill "$CMD_PID" 2>/dev/null
+	awaitSuccess '' isProcessTerminated "$CMD_PID"
+}
+
+testContainerStarted() {
+	! ps -C rails -C thin -C rake >/dev/null || (echo "Can be run as container start command only" >&2; false)
+}
+
+case "$1" in
+	rails|thin|rake)
+		testContainerStarted &&
+		rm -f /var/run/restore.pid &&
+		touch /var/run/run-command /var/run/command.pid &&
+		chown root:root /var/run/run-command /var/run/command.pid &&
+		chmod 0600 /var/run/run-command /var/run/command.pid &&
+		echo "$@" > /var/run/run-command &&
+		setupRedmine || exit 1
+		while true; do
+			runCommand || exit 2 # Run command in endless loop to handle backup restore actions that terminate 
+			awaitSuccess 'Waiting for backup restore action to complete' [ ! -f /var/run/restore.pid ]
+		done
+	;;
+	sh|backup|restore)
+		$@
+		exit $?
+	;;
+	*)
+		echo "Usage: thin start|rails ...|rake ...|sh|backup DEST|restore SRC" >&2
 	;;
 esac
-
-exec "$@"

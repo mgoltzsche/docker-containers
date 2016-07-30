@@ -28,7 +28,8 @@ services:
       LDAP_USER_PW: "${REDMINE_LDAP_USER_PW}"
     ports:
       - "3000:3000"
-#    volumes:
+    volumes:
+       - "./work:/backup"
 #      - "./data:/redmine/files"
 #    depends_on:
 #      - postgres
