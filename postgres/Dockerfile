@@ -7,7 +7,7 @@ RUN apk add --no-cache --update rsyslog postgresql
 # Add gosu for easy step-down from root
 # and tini for signal processing (graceful container termination) and zombie killing
 # (Install all in one RUN block to keep image small without build utils)
-ENV GOSU_VERSION 1.7
+ENV GOSU_VERSION 1.9
 ENV TINI_VERSION v0.9.0
 RUN set -x \
 	&& apk add --no-cache --update curl gnupg \
