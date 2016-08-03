@@ -1,7 +1,10 @@
 FROM java:8-jre-alpine
 MAINTAINER "Max Goltzsche" <max.goltzsche@algorythm.de>
 
-ENV NEXUS_VERSION 2.13.0-01
+ENV NEXUS_VERSION 3.0.1-01
+
+# Create nexus user and group
+RUN addgroup nexus && adduser -S -D -G nexus nexus -h /data -H -s /sbin/nologin
 
 # Add gosu for easy step-down from root
 # and tini for signal processing (graceful container termination) and zombie killing
@@ -29,16 +32,20 @@ RUN set -x \
 	&& tini -h \
 	&& apk del --purge gnupg
 
-# Create nexus user and group
-RUN addgroup nexus && adduser -S -G nexus nexus
-
 # Download and install Nexus OSS
-RUN wget -O nexus-bundle.tar.gz download.sonatype.com/nexus/oss/nexus-${NEXUS_VERSION}.war \
-	&& tar -xzf nexus-bundle.tar.gz \
+RUN set -x \
+	&& apk add --no-cache --update gnupg \
+	&& wget -O nexus.tar.gz http://download.sonatype.com/nexus/3/nexus-${NEXUS_VERSION}-unix.tar.gz \
+	&& wget -O nexus.tar.gz.asc http://download.sonatype.com/nexus/3/nexus-${NEXUS_VERSION}-unix.tar.gz.asc \
+	&& export GNUPGHOME="$(mktemp -d)" \
+	&& gpg --keyserver ha.pool.sks-keyservers.net --recv-keys 8DD1BDFD \
+	&& gpg --batch --verify nexus.tar.gz.asc nexus.tar.gz \
+	&& tar -xzf nexus.tar.gz \
 	&& mv nexus-$NEXUS_VERSION /nexus \
-	&& mkdir nexus-work \
-	&& chown -R nexus:nexus /nexus /nexus-work \
-	&& rm nexus-bundle.tar.gz /nexus/bin/*.bat
+	&& mkdir /data \
+	&& chown -R nexus:nexus /nexus /data \
+	&& rm -r "$GNUPGHOME" nexus.tar.gz nexus.tar.gz.asc \
+	&& apk del --purge gnupg
 
 # Add configuration and starter
 ADD entrypoint.sh /
@@ -48,4 +55,4 @@ EXPOSE 8080
 
 WORKDIR /nexus
 ENTRYPOINT ["tini", "-g", "--", "/entrypoint.sh"]
-CMD ["start"]
+CMD ["nexus", "run"]
