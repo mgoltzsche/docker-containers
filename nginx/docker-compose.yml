@@ -14,12 +14,11 @@ services:
     image: algorythm/nginx:latest
     hostname: web.algorythm.de
     environment:
+      LDAP_ENABLED: "true"
       LDAP_BIND_DN: "${NGINX_LDAP_USER_DN}"
       LDAP_BIND_PW: "${NGINX_LDAP_USER_PW}"
     ports:
       - "80:80"
-    volumes:
-       - "./work:/backup"
 #    depends_on:
 #      - ldap
 #    links:

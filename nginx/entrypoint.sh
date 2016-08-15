@@ -41,6 +41,7 @@ setupNginx() {
 				binddn_passwd "$LDAP_BIND_PW";
 				group_attribute $LDAP_GROUP_ATTR;
 				group_attribute_is_dn $LDAP_GROUP_ATTR_IS_DN;
+				require valid_user;
 			}
 		EOF
 	else
@@ -93,7 +94,6 @@ case "$1" in
 		nginx -tq || exit $?
 		$@ &
 		wait
-		#TODO: configure optional syslog usage and wait for syslog server to become available when enabled
 	;;
 	*)
 		$@
