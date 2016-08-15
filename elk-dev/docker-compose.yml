@@ -54,3 +54,17 @@ services:
       SYSLOG_REMOTE_ENABLED: "true"
       SYSLOG_HOST: "logstash"
       SYSLOG_PORT: 10514
+      LDAP_USER_DN_NGINX: "${NGINX_LDAP_USER_DN}"
+      LDAP_USER_PW_NGINX: "${NGINX_LDAP_USER_PW}"
+  nginx:
+    image: algorythm/nginx:latest
+    hostname: web.algorythm.de
+    environment:
+      SYSLOG_ENABLED: "true"
+      SYSLOG_HOST: "logstash"
+      SYSLOG_PORT: 10514
+      LDAP_ENABLED: "true"
+      LDAP_BIND_DN: "${NGINX_LDAP_USER_DN}"
+      LDAP_BIND_PW: "${NGINX_LDAP_USER_PW}"
+    ports:
+      - "80:80"

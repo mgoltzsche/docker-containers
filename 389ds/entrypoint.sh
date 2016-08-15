@@ -198,7 +198,7 @@ startRsyslog() {
 	chmod 444 /etc/rsyslog.conf || exit 1
 
 	# Start rsyslog
-	rm -f /var/run/rsyslogd.pid
+	rm -f /var/run/syslogd.pid
 	(
 		rsyslogd -n -f /etc/rsyslog.conf
 		terminateGracefully # Terminate whole container if syslogd somehow terminates

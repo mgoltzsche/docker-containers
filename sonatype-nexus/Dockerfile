@@ -29,7 +29,7 @@ RUN set -x \
 	&& gpg --batch --verify /usr/local/bin/tini.asc /usr/local/bin/tini \
 	&& rm -r "$GNUPGHOME" /usr/local/bin/tini.asc \
 	&& chmod +x /usr/local/bin/tini \
-	&& tini -h \
+	&& tini -h >/dev/null \
 	&& apk del --purge gnupg
 
 # Download and install Nexus OSS
