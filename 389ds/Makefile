@@ -33,4 +33,5 @@ join:
 	docker exec -it `docker ps | grep algorythm/389ds | cut -d ' ' -f 1` /bin/bash
 
 kill:
+	# Kill running container
 	docker kill `docker ps | grep algorythm/389ds | cut -d ' ' -f 1`

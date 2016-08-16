@@ -15,24 +15,24 @@ LDAP_GROUP_ATTR_IS_DN=${LDAP_GROUP_ATTR_IS_DN:=on}
 [ ! "$LDAP_ENABLED" = 'true' ] || [ ! "$LDAP_SUFFIX" = 'dc=' ] || (echo 'LDAP_SUFFIX not defined' >&2; false) || exit 1
 
 setupNginx() {
-	# Configure logging
+	echo -n "Remote syslog support: "
 	if [ "$SYSLOG_ENABLED" = true ]; then
-		echo "Enabling remote syslog logging"
+		echo "enabled"
 		awaitSuccess "Waiting for syslog UDP server $SYSLOG_HOST:$SYSLOG_PORT" nc -uzvw1 "$SYSLOG_HOST" "$SYSLOG_PORT"
 		cat > /etc/nginx/conf.d/logging.conf <<-EOF
 			error_log syslog:server=$SYSLOG_HOST:$SYSLOG_PORT;
 			access_log syslog:server=$SYSLOG_HOST:$SYSLOG_PORT,facility=local7,tag=nginx,severity=info access;
 		EOF
 	else
-		echo "Disabling remote syslog logging"
+		echo "disabled"
 		cat > /etc/nginx/conf.d/logging.conf <<-EOF
 			error_log stderr;
 			access_log off;
 		EOF
 	fi
-	# Configure LDAP
+	echo -n "LDAP support:          "
 	if [ "$LDAP_ENABLED" = true ]; then
-		echo "Enabling LDAP support"
+		echo "enabled"
 		awaitSuccess "Waiting for LDAP server $LDAP_HOST:$LDAP_PORT" nc -zvw1 "$LDAP_HOST" "$LDAP_PORT"
 		cat > /etc/nginx/conf.d/ldap.conf <<-EOF
 			ldap_server ldap_master {
@@ -45,7 +45,7 @@ setupNginx() {
 			}
 		EOF
 	else
-		echo "Disabling LDAP support"
+		echo "disabled"
 		echo > /etc/nginx/conf.d/ldap.conf
 	fi
 }

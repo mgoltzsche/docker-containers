@@ -23,4 +23,5 @@ join:
 	docker exec -it `docker ps | grep algorythm/nginx | cut -d ' ' -f 1` /bin/sh
 
 kill:
+	# Kill running container
 	docker kill `docker ps | grep algorythm/nginx | cut -d ' ' -f 1`

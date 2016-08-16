@@ -1,0 +1,36 @@
+FROM alpine:edge
+MAINTAINER "Max Goltzsche" <max.goltzsche@algorythm.de>
+
+ENV HHVM_VERSION=HHVM-3.14.4
+
+# Missing packages: boost-context, libc-client (libc-utils?), libgd2-xpm, libonig-dev, libtbb-dev, libmagickwand-dev (but imagemagick available), libiconv-hook-dev, libiberty-dev, ocaml-native-compilers
+# Solution: libdwarf, libtbb, glog, ocaml, oniguruma will come with the next alpine release (are in testing repo currently)
+# Problem: gcc, g++ etc. are not available under version 4.9 but 6 in edge which has to be used since testing repo is not available in 3.2.
+#          With 6er gcc compile errors occur. v3.2 repo could be used for 4.9 deps instead but then "symbol not found" errors occur when starting cmake.
+
+# Add testing repo for now to get libtbb etc. libs
+RUN echo '@testing http://nl.alpinelinux.org/alpine/edge/testing' >> /etc/apk/repositories
+# Add 3.2er repository to install gcc 4.9
+#RUN echo '@v3.2 http://nl.alpinelinux.org/alpine/v3.2/main' >> /etc/apk/repositories
+
+# Last line comes from 'testing' repo
+RUN set -x \
+	&& apk add --no-cache --update git gcc@v3.2 g++@v3.2 make autoconf automake binutils-dev cmake gawk \
+		boost boost-dev boost-filesystem boost-program_options boost-regex boost-system boost-thread \
+		libbz2 libc-dev c-client libldap openldap-dev libcap libcap-dev openssl curl curl-dev libstdc++ libelf libelf-dev expat expat-dev gd gd-dev \
+		icu icu-dev jemalloc jemalloc-dev libmcrypt libmcrypt-dev libmemcached libmemcached-dev mysql-client \
+		ncurses ncurses-dev pcre pcre-dev readline readline-dev libtool libxml2 libxml2-dev zlib zlib-dev \
+		libevent libevent-dev imagemagick imagemagick-dev inotify-tools inotify-tools-dev libedit libedit-dev libxslt libxslt-dev \
+		sqlite-libs sqlite-dev yaml yaml-dev gmp gmp-dev gperf krb5-libs krb5-dev libnotify libnotify-dev jpeg jpeg-dev \
+		glog@testing glog-dev@testing libtbb@testing libtbb-dev@testing ocaml@testing libdwarf@testing libdwarf-dev@testing oniguruma@testing oniguruma-dev@testing
+
+RUN set -x \
+	&& git clone git://github.com/facebook/hhvm.git --branch $HHVM_VERSION --single-branch --depth=1 \
+	&& cd hhvm \
+	&& git submodule update --init --recursive
+#RUN apk add --no-cache --update 
+RUN cd hhvm \
+	&& cmake -DMYSQL_UNIX_SOCK_ADDR=/var/run/mysqld/mysqld.sock . \
+	&& make -j 6 \
+	&& make install
+#	&& rm -rf ../hhvm-$HHVM_VERSION

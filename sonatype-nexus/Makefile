@@ -8,17 +8,20 @@ build:
 
 run:
 	# Run container
-	docker run -h repository.algorythm.de algorythm/sonatype-nexus:latest
-#	docker run -h auth.algorythm.de --security-opt seccomp:unconfined algorythm/apacheds:latest
+	docker run -h repository.algorythm.de -p 8081:8081 -v `pwd`"/work:/data" algorythm/sonatype-nexus:latest
 
 logs:
 	# Show log of running container
-	docker logs `docker ps | grep sonatype-nexus | cut -d ' ' -f 1`
+	docker logs `docker ps | grep algorythm/sonatype-nexus | cut -d ' ' -f 1`
 
 sh:
 	# Run bash in container interactively
-	docker run -it -p 8080:8080 -h repository.algorythm.de algorythm/sonatype-nexus:latest /bin/sh
+	docker run -it -h repository.algorythm.de algorythm/sonatype-nexus:latest /bin/sh
 
 join:
 	# Execute interactive bash on running container
-	docker exec -it `docker ps | grep sonatype-nexus | cut -d ' ' -f 1` /bin/sh
+	docker exec -it `docker ps | grep algorythm/sonatype-nexus | cut -d ' ' -f 1` /bin/sh
+
+kill:
+	# Kill running container
+	docker kill `docker ps | grep algorythm/sonatype-nexus | cut -d ' ' -f 1`

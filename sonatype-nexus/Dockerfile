@@ -42,8 +42,10 @@ RUN set -x \
 	&& gpg --batch --verify nexus.tar.gz.asc nexus.tar.gz \
 	&& tar -xzf nexus.tar.gz \
 	&& mv nexus-$NEXUS_VERSION /nexus \
-	&& mkdir /data \
+	&& mkdir -m 750 /data \
 	&& chown -R nexus:nexus /nexus /data \
+	&& rm -r /nexus/data \
+	&& sed -Ei 's/^(-Dkaraf\.data|-Djava.io.tmpdir)=data/\1=\/data/' /nexus/bin/nexus.vmoptions \
 	&& rm -r "$GNUPGHOME" nexus.tar.gz nexus.tar.gz.asc \
 	&& apk del --purge gnupg
 
@@ -51,7 +53,8 @@ RUN set -x \
 ADD entrypoint.sh /
 RUN chmod 544 /entrypoint.sh
 
-EXPOSE 8080
+EXPOSE 8081
+VOLUME /data
 
 WORKDIR /nexus
 ENTRYPOINT ["tini", "-g", "--", "/entrypoint.sh"]

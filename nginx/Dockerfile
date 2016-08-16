@@ -2,13 +2,14 @@ FROM alpine:3.4
 MAINTAINER "Max Goltzsche" <max.goltzsche@algorythm.de>
 
 RUN addgroup www-data && adduser -S -D -G www-data www-data -H -s /sbin/nologin
-RUN apk add --update --no-cache openssl expat zlib gd libldap
 
 ENV NGINX_VERSION 1.9.9
 ENV NGINX_MOD_DAV_EXT_VERSION 0.0.3
 ENV NGINX_PCRE_VERSION 8.39
 # TODO: use concrete ldap plugin version when up-to-date: ENV NGINX_MOD_LDAP_VERSION 0.1
-RUN apk add --no-cache --update gnupg gcc g++ make openssl-dev zlib-dev expat-dev gd-dev openldap-dev \
+RUN set -x \
+	&& BUILD_DEPS='gnupg gcc g++ make openssl-dev zlib-dev expat-dev gd-dev openldap-dev' \
+	&& apk add --no-cache --update openssl expat zlib gd libldap $BUILD_DEPS \
 	&& DOWNLOAD_DIR=$(mktemp -d) \
 	&& cd $DOWNLOAD_DIR \
 	&& wget -O nginx.tar.gz     http://nginx.org/download/nginx-$NGINX_VERSION.tar.gz \
@@ -53,7 +54,7 @@ RUN apk add --no-cache --update gnupg gcc g++ make openssl-dev zlib-dev expat-de
 	&& mkdir -m 755 /etc/nginx/vhosts \
 	&& mkdir -m 755 /etc/nginx/conf.d \
 	&& rm -r $GNUPGHOME $DOWNLOAD_DIR $SRC_DIR \
-	&& apk del --purge gnupg gcc g++ make openssl-dev zlib-dev expat-dev gd-dev openldap-dev
+	&& apk del --purge $BUILD_DEPS
 
 EXPOSE 80
 
