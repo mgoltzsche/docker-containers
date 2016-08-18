@@ -45,14 +45,18 @@ chown -R www-data:www-data /apps
 case "$1" in
 	hhvm)
 		trap terminateGracefully 1 2 3 15
+		for INIT_SCRIPT in $(find /conf.d -name *.sh); do
+			sh $INIT_SCRIPT || exit 1
+		done
 		rm -f /var/log/hhvm/error.log &&
 		mkfifo /var/log/hhvm/error.log &&
 		chown root:www-data /var/log/hhvm/error.log &&
 		chmod 420 /var/log/hhvm/error.log || exit 1
 		while true; do
-			cat /var/log/hhvm/error.log
+			cat /var/log/hhvm/error.log # Log into named pipe since hhvm user cannot log into /dev/stderr
 		done &
 		LOG_PIPE_LOOP_PID=$!
+		# TODO: handle PHP error_log
 		gosu www-data $@ &
 		HHVM_PID=$!
 		wait

@@ -21,7 +21,7 @@ delay_warning_time = 4h
 readme_directory = no
 queue_directory = /var/spool/postfix
 
-alias_maps=hash:/etc/aliases
+alias_maps = hash:/etc/aliases
 myhostname = mail.example.org (replaced with docker env var)
 mydestination = localhost, $myhostname
 mynetworks = 127.0.0.0/8 [::ffff:127.0.0.0]/104 [::1]/128
@@ -33,9 +33,9 @@ inet_protocols = ipv4
 home_mailbox = Maildir/
 
 # LDAP configuration files generated in entrypoint.sh
-virtual_alias_maps = "ldap:/etc/postfix/ldap/virtual_aliases.cf"
-virtual_mailbox_domains = "ldap:/etc/postfix/ldap/virtual_domains.cf"
-virtual_mailbox_maps = "ldap:/etc/postfix/ldap/virtual_mailboxes.cf"
+virtual_alias_maps = ldap:/etc/postfix/ldap/virtual_aliases.cf
+virtual_mailbox_domains = ldap:/etc/postfix/ldap/virtual_domains.cf
+virtual_mailbox_maps = ldap:/etc/postfix/ldap/virtual_mailboxes.cf
 virtual_mailbox_base = /var/mail
 virtual_uid_maps = static:5000
 virtual_gid_maps = static:5000
@@ -54,9 +54,6 @@ smtpd_tls_session_cache_timeout = 3600s
 # smtpd_tls_auth_only = yes
 tls_random_source = dev:/dev/urandom
 
-# See /usr/share/doc/postfix/TLS_README.gz in the postfix-doc package for
-# information on enabling SSL in the smtp client.
-
 # SASL parameters
 smtpd_sasl_auth_enable = yes
 smtpd_sasl_type = dovecot
@@ -67,7 +64,7 @@ smtpd_sasl_local_domain = $myhostname
 broken_sasl_auth_clients = yes
 
 # Set SMTP permissions/restrictions
-smtpd_sender_login_maps = "ldap:/etc/postfix/ldap/virtual_senders.cf"
+smtpd_sender_login_maps = ldap:/etc/postfix/ldap/virtual_senders.cf
 smtpd_sender_restrictions = permit_mynetworks,
 	reject_non_fqdn_sender,
 	reject_unknown_sender_domain,

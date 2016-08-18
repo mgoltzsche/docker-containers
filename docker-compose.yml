@@ -44,13 +44,15 @@ services:
       SYSLOG_PORT: 10514
       LDAP_USER_DN_REDMINE: "${REDMINE_LDAP_USER_DN}"
       LDAP_USER_PW_REDMINE: "${REDMINE_LDAP_USER_PW}"
+      LDAP_USER_DN_MAIL: "${MAIL_LDAP_USER_DN}"
+      LDAP_USER_PW_MAIL: "${MAIL_LDAP_USER_PW}"
 #    volumes:
 #      - "./data:/var/lib/dirsrv"
     depends_on:
       - logstash
     links:
       - logstash
-  # TODO: fix mail integration of logstash (parser,connection) and ldap (user+password)
+  # TODO: ldap (user+password)
   mail:
     extends:
       file: mail/docker-compose.yml
@@ -59,6 +61,8 @@ services:
       SYSLOG_REMOTE_ENABLED: "true"
       SYSLOG_HOST: "logstash"
       SYSLOG_PORT: 10514
+      LDAP_USER_DN: "${MAIL_LDAP_USER_DN}"
+      LDAP_USER_PW: "${MAIL_LDAP_USER_PW}"
     depends_on:
       - logstash
     links:

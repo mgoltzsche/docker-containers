@@ -2,6 +2,7 @@
 
 DOMAIN=$(hostname -d)
 CERTIFICATE_NAME='server' # TODO: if this is dynamic the values in postfix/dovecot config have to be adjusted dynamically
+POSTMASTER_EMAIL=$POSTMASTER_EMAIL
 SYSLOG_REMOTE_ENABLED=${SYSLOG_REMOTE_ENABLED:=false}
 SYSLOG_HOST=${SYSLOG_HOST:=syslog}
 SYSLOG_PORT=${SYSLOG_PORT:=514}
@@ -12,18 +13,6 @@ LDAP_USER_DN=${LDAP_USER_DN:="cn=vmail,ou=Special Users,$LDAP_SUFFIX"}
 LDAP_USER_PW=${LDAP_USER_PW:="MailServerSecret123"}
 LDAP_MAILBOX_SEARCH_BASE=${LDAP_MAILBOX_SEARCH_BASE:="$LDAP_SUFFIX"}
 LDAP_DOMAIN_SEARCH_BASE=${LDAP_DOMAIN_SEARCH_BASE:="ou=Domains,$LDAP_SUFFIX"}
-
-if [ -z "$DOMAIN" ]; then # Terminate when domain name cannot be determined
-	echo 'hostname -d is undefined.' >&2
-	echo 'Setup a proper hostname by adding an entry to /etc/hosts like this:' >&2
-	echo ' 172.17.0.2      mail.example.org mail' >&2
-	echo 'When using docker start the container with the -h option' >&2
-	echo 'to configure the hostname. E.g.: -h mail.example.org' >&2
-	exit 1
-fi
-
-echo 'Configuring mailing with:'
-set | grep -E '^DOMAIN=|^LOGSTASH_|^CERTIFICATE_NAME=|^LDAP_' | sed -E 's/(^[^=]+_(PASSWORD|PW)=).+/\1***/i' | xargs -n1 echo ' ' # Show variables
 
 awaitSuccess() {
 	MSG="$1"
@@ -73,7 +62,6 @@ setupPostfix() {
 	LDAP_DOMAIN_QUERY='(associatedDomain=%s)'
 	LDAP_DOMAIN_ATTR='associatedDomain'
 	LDAP_MAILBOX_QUERY='(&(objectClass=inetOrgPerson)(|(mail=%s)(mailAlternateAddress=%s)))'
-
 	echo "Configuring postfix ..."
 	mkdir -p /etc/postfix/ldap &&
 	chmod 00755 /etc/postfix/ldap &&
@@ -84,10 +72,14 @@ setupPostfix() {
 	cd /etc/postfix/ldap &&
 	postfixLdapConf virtual_domains.cf   "$LDAP_DOMAIN_SEARCH_BASE"  "$LDAP_DOMAIN_QUERY"  "$LDAP_DOMAIN_ATTR" &&
 	postfixLdapConf virtual_aliases.cf   "$LDAP_MAILBOX_SEARCH_BASE" "$LDAP_MAILBOX_QUERY" 'mailForwardingAddress' &&
-	postfixLdapConf virtual_mailboxes.cf "$LDAP_MAILBOX_SEARCH_BASE" "$LDAP_MAILBOX_QUERY" "mail\nresult_format = %d/%u/" &&
+	postfixLdapConf virtual_mailboxes.cf "$LDAP_MAILBOX_SEARCH_BASE" "$LDAP_MAILBOX_QUERY" "$(printf 'mail\nresult_format') = %d/%u/" &&
 	postfixLdapConf virtual_senders.cf   "$LDAP_MAILBOX_SEARCH_BASE" "$LDAP_MAILBOX_QUERY" 'mail' &&
 	# Update postfix aliases DB
-	newaliases
+	cat > /etc/aliases <<-EOF
+		postmaster: root
+		root: $POSTMASTER_EMAIL
+	EOF
+	postalias /etc/aliases
 }
 
 postfixLdapConf() {
@@ -132,6 +124,20 @@ setupDovecot() {
 }
 
 setup() {
+	if [ -z "$DOMAIN" ]; then # Terminate when domain name cannot be determined
+		echo 'hostname -d is undefined.' >&2
+		echo 'Setup a proper hostname by adding an entry to /etc/hosts like this:' >&2
+		echo ' 172.17.0.2      mail.example.org mail' >&2
+		echo 'When using docker start the container with the -h option' >&2
+		echo 'to configure the hostname. E.g.: -h mail.example.org' >&2
+		exit 1
+	fi
+
+	[ "$POSTMASTER_EMAIL" ] || (echo 'POSTMASTER_EMAIL unset'; false) || exit 1
+
+	echo 'Configuring mailing with:'
+	set | grep -E '^DOMAIN=|^LOGSTASH_|^CERTIFICATE_NAME=|^LDAP_' | sed -E 's/(^[^=]+_(PASSWORD|PW)=).+/\1***/i' | xargs -n1 echo ' ' # Show variables
+
 	# Setup postfix+dovecot+ldap configuration
 	chown root:root /var/spool/postfix /var/spool/postfix/pid &&
 	setupRsyslog &&

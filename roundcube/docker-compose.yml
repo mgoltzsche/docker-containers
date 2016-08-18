@@ -1,0 +1,34 @@
+# Runs Redmine Backlogs with PostgreSQL database
+version: '2'
+services:
+  ldap:
+    extends:
+      file: ../mail/docker-compose.yml
+      service: ldap
+  mail:
+    extends:
+      file: ../mail/docker-compose.yml
+      service: mail
+  postgres:
+    extends:
+      file: ../postgres/docker-compose.yml
+      service: postgres
+    environment:
+      PG_USER_ROUNDCUBE: "${ROUNDCUBE_POSTGRES_PASSWORD}"
+  roundcube:
+    image: algorythm/roundcube:latest
+    hostname: webmail.algorythm.de
+    environment:
+      DB_ADAPTER: pgsql
+      DB_USERNAME: roundcube
+      DB_PASSWORD: "${ROUNDCUBE_POSTGRES_PASSWORD}"
+      LDAP_USER_DN: "${REDMINE_LDAP_USER_DN}"
+      LDAP_USER_PW: "${REDMINE_LDAP_USER_PW}"
+    ports:
+      - "9000:9000"
+#    depends_on:
+#      - postgres
+#      - mail
+#    links:
+#      - postgres
+#      - mail
