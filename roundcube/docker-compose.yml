@@ -9,6 +9,8 @@ services:
     extends:
       file: ../mail/docker-compose.yml
       service: mail
+    environment:
+      TRUSTED_NETWORKS: 'true'
   postgres:
     extends:
       file: ../postgres/docker-compose.yml
@@ -19,13 +21,15 @@ services:
     image: algorythm/roundcube:latest
     hostname: webmail.algorythm.de
     environment:
-      DB_ADAPTER: pgsql
+      DB_TYPE: pgsql
       DB_USERNAME: roundcube
       DB_PASSWORD: "${ROUNDCUBE_POSTGRES_PASSWORD}"
       LDAP_USER_DN: "${REDMINE_LDAP_USER_DN}"
       LDAP_USER_PW: "${REDMINE_LDAP_USER_PW}"
     ports:
       - "9000:9000"
+    volumes:
+      - "./work/ssl/certs/ca-cert.pem:/etc/ssl/certs/ca-cert.pem"
 #    depends_on:
 #      - postgres
 #      - mail

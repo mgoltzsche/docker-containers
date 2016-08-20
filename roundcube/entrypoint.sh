@@ -2,9 +2,10 @@
 
 set -e
 	: ${RC_LANGUAGE:=en_US}
-	: ${RC_DEFAULT_HOST:=ssl://mail}
-	: ${RC_DEFAULT_PORT:=993}
+	: ${RC_DEFAULT_HOST:=mail}
+	: ${RC_DEFAULT_PORT:=143}
 	: ${RC_SMTP_SERVER:=mail}
+	: ${RC_SMTP_PORT:=25}
 	: ${RC_SMTP_USER:=%u}
 	: ${RC_SMTP_PASS:=%p}
 	: ${RC_AUTO_CREATE_USER:=true}
@@ -27,7 +28,7 @@ case "$DB_TYPE" in
 	;;
 	pgsql)
 		[ "$DB_DATABASE" ] || DB_DATABASE=$DB_USERNAME
-		RC_DB_DSNW="pgsql://$DB_USER:$DB_PASSWORD@$DB_HOST/$DB_DATABASE"
+		RC_DB_DSNW="pgsql://$DB_USERNAME:$DB_PASSWORD@$DB_HOST/$DB_DATABASE"
 	;;
 	*)
 		echo "Unsupported DB type: $DB_TYPE" >&2
@@ -49,7 +50,14 @@ done
 
 cat > /roundcube/config/config.inc.php <<-EOF
 	<?php
-	\$config['plugins'] = array();
-	$CFG_CONTENT
+	  \$config['plugins'] = array();
+	  //\$config['smtp_conn_options'] = array(
+	  //  'ssl'         => array(
+	  //    'verify_peer'  => true,
+	  //    'verify_depth' => 1,
+	  //    'cafile'       => '/etc/ssl/certs/ca-cert.pem',
+	  //  ),
+	  //);
+	  $CFG_CONTENT
 	?>
 EOF
