@@ -1,4 +1,4 @@
-FROM alpine:3.3
+FROM alpine:3.4
 MAINTAINER "Max Goltzsche" <max.goltzsche@algorythm.de>
 
 ENV DOMAIN algorythm.de
@@ -15,7 +15,7 @@ RUN addgroup -g 5000 vmail && \
     adduser -u 5000 -S -D -G vmail vmail -h /var/mail -H -s /sbin/nologin
 
 # Install rsyslog, postfix and dovecot + ldap integration
-RUN apk add --no-cache --update rsyslog postfix postfix-ldap dovecot dovecot-ldap
+RUN apk add --no-cache --update rsyslog postfix postfix-ldap dovecot dovecot-ldap ca-certificates
 
 # Install tini for signal processing (graceful container termination) and zombie killing
 ENV TINI_VERSION v0.9.0
@@ -48,20 +48,23 @@ smtps     inet  n       -       n       -       -       smtpd\n\
   -o milter_macro_daemon_name=ORIGINATING' \
   >> /etc/postfix/master.cf
 
-# Add vmail directory
-RUN mkdir /var/mail && \
-    chown -R vmail:vmail /var/mail && \
-    chmod 00750 /var/mail
+# Add/cleanup directories
+RUN mkdir /var/mail \
+    && chown -R vmail:vmail /var/mail \
+    && chmod 00750 /var/mail \
+    && rm -rf /var/spool/postfix /etc/dovecot/* \
+    && mkdir -m 0755 /var/run/postfix /etc/dovecot/conf.d \
+    && touch /etc/dovecot/conf.d/00-empty.conf \
+    && chown postfix:root /var/run/postfix \
+    && rm -rf /etc/ssl/dovecot
 
-# Expose postfix mail queue volume
-VOLUME /var/spool/postfix
 # Expose dovecot maildir volume
 VOLUME /var/mail
 
-# Postfix ports
-EXPOSE 25 465 587
-# Dovecot ports
-EXPOSE 110 143 993 995
+# Postfix smtp ports
+EXPOSE 25 587
+# Dovecot imap ports
+EXPOSE 143 993
 
 # Add custom configuration
 ADD postfix-main.cf /etc/postfix/main.cf
@@ -69,11 +72,8 @@ ADD dovecot.conf /etc/dovecot/dovecot.conf
 
 ENV SERVICE_25_CHECK_SCRIPT nc -vzw1 $SERVICE_IP $SERVICE_PORT || exit 2
 ENV SERVICE_25_CHECK_INTERVAL 15s
-ENV SERVICE_110_CHECK_SCRIPT echo SERVICE $SERVICE_IP $SERVICE_PORT >&2
-ENV SERVICE_110_CHECK_INTERVAL 15s
 
 # Configure entrypoint
 ADD entrypoint.sh /
-RUN chown root:root /var/spool/postfix /var/spool/postfix/pid
 ENTRYPOINT ["tini", "--", "/entrypoint.sh"]
 CMD ["run"]

@@ -9,7 +9,7 @@ run:
 
 sh:
 	# Start container with interactive shell
-	docker run -it -v `pwd`/work:/work -h mail.algorythm.de algorythm/mail:latest /bin/sh
+	docker run -it -h mail.algorythm.de algorythm/mail:latest /bin/sh
 
 join:
 	# Execute interactive shell on running container

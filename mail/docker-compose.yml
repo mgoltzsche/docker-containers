@@ -14,13 +14,12 @@ services:
     hostname: mail.algorythm.de
     ports:
       - "25:25"
-      - "465:465"
       - "587:587"
-      - "110:110"
       - "143:143"
       - "993:993"
-      - "995:995"
     environment:
       LDAP_USER_DN: "${MAIL_LDAP_USER_DN}"
       LDAP_USER_PW: "${MAIL_LDAP_USER_PW}"
       POSTMASTER_EMAIL: max.goltzsche@algorythm.de
+    volumes:
+      - "./work:/var/mail"

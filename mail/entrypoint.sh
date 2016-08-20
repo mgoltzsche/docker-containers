@@ -1,41 +1,58 @@
 #!/bin/sh
 
-DOMAIN=$(hostname -d)
-CERTIFICATE_NAME='server' # TODO: if this is dynamic the values in postfix/dovecot config have to be adjusted dynamically
+MACHINE_FQN=${MACHINE_FQN:-$(hostname -f)}
 POSTMASTER_EMAIL=$POSTMASTER_EMAIL
 SYSLOG_REMOTE_ENABLED=${SYSLOG_REMOTE_ENABLED:=false}
 SYSLOG_HOST=${SYSLOG_HOST:=syslog}
 SYSLOG_PORT=${SYSLOG_PORT:=514}
-LDAP_SUFFIX=${LDAP_SUFFIX:='dc='$(echo -n "$DOMAIN" | sed s/\\./,dc=/g)}
+LDAP_DOMAIN=$(echo -n "$MACHINE_FQN" | sed -E 's/[^\.]+\.?//')
+LDAP_SUFFIX=${LDAP_SUFFIX:='dc='$(echo -n "$LDAP_DOMAIN" | sed s/\\./,dc=/g)}
 LDAP_HOST=${LDAP_HOST:=ldap}
 LDAP_PORT=${LDAP_PORT:=389}
 LDAP_USER_DN=${LDAP_USER_DN:="cn=vmail,ou=Special Users,$LDAP_SUFFIX"}
 LDAP_USER_PW=${LDAP_USER_PW:="MailServerSecret123"}
 LDAP_MAILBOX_SEARCH_BASE=${LDAP_MAILBOX_SEARCH_BASE:="$LDAP_SUFFIX"}
 LDAP_DOMAIN_SEARCH_BASE=${LDAP_DOMAIN_SEARCH_BASE:="ou=Domains,$LDAP_SUFFIX"}
+SSL_CERT_SUBJ=${SSL_CERT_SUBJ:="/C=DE/ST=Berlin/L=Berlin/O=$LDAP_DOMAIN"}
+TRUSTED_NETWORKS=${TRUSTED_NETWORKS:=false} # true, false or actual value. ATTENTION: In trusted nets plaintext imap auth is allowed + smtp is less restrictive
 
 awaitSuccess() {
 	MSG="$1"
 	shift
 	until $@; do
-		echo "$MSG" >&2
+		[ ! "$MSG" ] || echo "$MSG" >&2
 		sleep 1
 	done
 }
 
 setupSslCertificate() {
-	# Generate SSL certificate if not available
-	if [ -f "/etc/ssl/private/$CERTIFICATE_NAME.key" ]; then
-		echo "Using provided server certificate /etc/ssl/private/$CERTIFICATE_NAME.key"
+	echo "Configuring SSL certificate ..."
+	mkdir -p -m 0755 /var/mail/ssl/private /var/mail/ssl/certs || exit 1
+	KEY_FILE="/var/mail/ssl/private/$MACHINE_FQN-key.key"
+	CERT_FILE="/var/mail/ssl/certs/$MACHINE_FQN-cert.pem"
+	SUBJ="$SSL_CERT_SUBJ/CN=$MACHINE_FQN"
+
+	if [ -f "$KEY_FILE" -a -f "$CERT_FILE" ]; then
+		echo "Using existing SSL certificate: $CERT_FILE"
+	elif [ -f "$KEY_FILE" ]; then
+		echo "Generating new SSL certificate for '$SUBJ' ..."
+		openssl req -new -days 730 -sha512 -subj "$SUBJ" \
+			-key "$KEY_FILE" -out "$CERT_FILE"
 	else
-		SUBJ="/C=DE/ST=Berlin/L=Berlin/O=algorythm/CN=$DOMAIN"
-		echo "Generating new server certificate '$CERTIFICATE_NAME' for '$SUBJ' ..."
-		openssl req -new -newkey rsa:4096 -days 2000 -nodes -x509 \
-			-subj "$SUBJ" \
-			-keyout "/etc/ssl/private/$CERTIFICATE_NAME.key" \
-			-out "/etc/ssl/certs/$CERTIFICATE_NAME.crt" &&
-		chmod 600 "/etc/ssl/private/$CERTIFICATE_NAME.key"
+		echo "Generating new SSL key+certificate for '$SUBJ' ..."
+		# -x509 means selfsigned/no cert. req.
+		openssl req -new -newkey rsa:4096 -days 730 -nodes -x509 \
+			-subj "$SUBJ" -sha512 \
+			-keyout "$KEY_FILE" -out "$CERT_FILE" &&
+		chmod 600 "$KEY_FILE" || exit 1
+		# (TODO: sign certificate using CA sign service)
 	fi
+
+	rm -f /etc/ssl/certs/server.pem /etc/ssl/private/server.key /etc/ssl/certs/ca.pem &&
+	c_rehash /etc/ssl/certs >/dev/null && # Map certificates
+	ln -s "$KEY_FILE" /etc/ssl/private/server.key &&
+	ln -s "$CERT_FILE" /etc/ssl/certs/server.pem &&
+	ln -s "/var/mail/ssl/certs/ca.pem" /etc/ssl/certs/ca.pem || exit 1
 }
 
 setupRsyslog() {
@@ -66,8 +83,9 @@ setupPostfix() {
 	mkdir -p /etc/postfix/ldap &&
 	chmod 00755 /etc/postfix/ldap &&
 	chmod 644 /etc/postfix/main.cf &&
-	# Set hostname in main.cf
-	sed -Ei 's/^myhostname\s*=.*$/myhostname = mail.algorythm.dex/' /etc/postfix/main.cf &&
+	# Set MACHINE_FQN and TRUSTED_NETS in main.cf
+	sed -Ei "s/^myhostname\s*=.*\$/myhostname = $MACHINE_FQN/" /etc/postfix/main.cf &&
+	sed -Ei "s/^mynetworks\s*=.*\$/mynetworks = $TRUSTED_NETS/" /etc/postfix/main.cf &&
 	# Generate postfix LDAP configuration files
 	cd /etc/postfix/ldap &&
 	postfixLdapConf virtual_domains.cf   "$LDAP_DOMAIN_SEARCH_BASE"  "$LDAP_DOMAIN_QUERY"  "$LDAP_DOMAIN_ATTR" &&
@@ -101,6 +119,9 @@ postfixLdapConf() {
 
 setupDovecot() {
 	echo "Configuring dovecot ..."
+	mkdir -p -m 0700 /var/mail/maildir &&
+	chown -R vmail:vmail /var/mail/maildir &&
+	sed -Ei "s/^login_trusted_networks\s*=.*\$/login_trusted_networks = $TRUSTED_NETS/" /etc/dovecot/dovecot.conf &&
 	# Generate dovecot LDAP configuration
 	cat > /etc/dovecot/dovecot-ldap.conf.ext <<-EOF
 		# Dovecot LDAP mailbox resultion query (included in /etc/dovecot.conf)
@@ -110,7 +131,7 @@ setupDovecot() {
 		tls = no
 		auth_bind = yes
 		base = $LDAP_MAILBOX_SEARCH_BASE
-		user_attrs = =mail=maildir:/var/vmail/%d/%n/
+		user_attrs = =mail=maildir:/var/mail/maildir/%d/%n/
 		user_filter = (&(objectClass=inetOrgPerson)(mail=%u))
 		pass_attrs = 
 		pass_filter = (&(objectClass=inetOrgPerson)(mail=%u))
@@ -124,22 +145,39 @@ setupDovecot() {
 }
 
 setup() {
-	if [ -z "$DOMAIN" ]; then # Terminate when domain name cannot be determined
-		echo 'hostname -d is undefined.' >&2
-		echo 'Setup a proper hostname by adding an entry to /etc/hosts like this:' >&2
-		echo ' 172.17.0.2      mail.example.org mail' >&2
-		echo 'When using docker start the container with the -h option' >&2
-		echo 'to configure the hostname. E.g.: -h mail.example.org' >&2
+	if [ -z "$MACHINE_FQN" -o -z "$LDAP_DOMAIN" ]; then # Terminate when FQN or domain name cannot be determined
+		cat >&2 <<-EOF
+			MACHINE_FQN or LDAP_DOMAIN is undefined.
+			These variables will be derived when you setup a proper MACHINE_FQN.
+			E.g. add line to /etc/hosts: 172.17.0.2  mail.example.org mail
+			When using docker start the container with the -h option
+			to configure the machine FQN. E.g.: -h mail.example.org
+		EOF
 		exit 1
 	fi
 
 	[ "$POSTMASTER_EMAIL" ] || (echo 'POSTMASTER_EMAIL unset'; false) || exit 1
 
 	echo 'Configuring mailing with:'
-	set | grep -E '^DOMAIN=|^LOGSTASH_|^CERTIFICATE_NAME=|^LDAP_' | sed -E 's/(^[^=]+_(PASSWORD|PW)=).+/\1***/i' | xargs -n1 echo ' ' # Show variables
+	set | grep -E '^SSL_|^LOGSTASH_|^LDAP_|^TRUSTED_' | sed -E 's/(^[^=]+_(PASSWORD|PW)=).+/\1***/i' | xargs -n1 echo ' ' # Show variables
 
-	# Setup postfix+dovecot+ldap configuration
-	chown root:root /var/spool/postfix /var/spool/postfix/pid &&
+	# Set/derive trusted networks
+	TRUSTED_NETS='127.0.0.0/8 [::ffff:127.0.0.0]/104 [::1]/128'
+	if [ "$TRUSTED_NETWORKS" = 'true' ]; then
+		# Trust all networks this machine is in
+		for IP in $(ip -o -4 addr list | grep -Eo '([0-9]+\.){3}[0-9]+/[0-9]+'); do
+			IP_NET=$(ipcalc -s -n "$IP" | sed -E 's/[^=]+=//')
+			IP_PFX=$(ipcalc -s -p "$IP" | sed -E 's/[^=]+=//')
+			TRUSTED_NETS="$TRUSTED_NETS $IP_NET/$IP_PFX"
+		done
+	elif [ ! "$TRUSTED_NETWORKS" = 'false' ]; then
+		TRUSTED_NETS="$TRUSTED_NETWORKS"
+	fi
+	TRUSTED_NETS="$(echo "$TRUSTED_NETS" | sed 's/\//\\\//g')" # Escape for sed
+
+	# Setup postfix+dovecot+ldap+syslog configuration
+	mkdir -p /var/mail/queue &&
+	chown root:root /var/mail/queue &&
 	setupRsyslog &&
 	setupSslCertificate &&
 	setupPostfix &&
@@ -156,8 +194,7 @@ backup() {
 	BACKUP_DIR=/backup/mail-$BACKUP_DATE
 	mkdir -p $BACKUP_DIR/etc &&
 	cp /etc/{dovecot/dovecot.conf,postfix/{main.cf,master.cf}} $BACKUP_DIR/etc/ &&
-	cp -R /var/mail $BACKUP_DIR/maildir &&
-	cp -R /var/spool/postfix $BACKUP_DIR/postfix-queue
+	cp -R /var/mail $BACKUP_DIR/mail &&
 	startPostfix &&
 	startDovecot
 }
@@ -169,15 +206,16 @@ restore() {
 	BACKUP_DIR=/backup/mail-$BACKUP_DATE
 	rm -rf /var/mail &&
 	cp -R $BACKUP_DIR/mail /var/mail &&
-	cp -R $BACKUP_DIR/postfix-queue /var/spool/postfix &&
-	chown -R vmail:vmail /var/mail &&
+	chown -R vmail:vmail /var/mail/maildir &&
+	chmod 0700 /var/mail/maildir
 	startPostfix &&
 	startDovecot
 }
 
+# Start rsyslog to collect postfix & dovecot logs and both
+# print them to stdout and send them to remote syslog server.
 startSyslog() {
-	# Start rsyslog to collect postfix & dovecot logs and print them to stdout and send them to logstash
-	export SYSLOGD="-m ${SYSLOG_MARK_INTERVAL:-60}" # Set syslog -- Mark -- interval in minutes (useful for health check)
+	rm -f /var/run/syslogd.pid
 	rsyslogd -n -f /etc/rsyslog.conf &
 	SYSLOG_PID=$!
 	awaitSuccess 'Waiting for local rsyslog' [ -S /dev/log ]
@@ -188,7 +226,7 @@ startPostfix() {
 }
 
 stopPostfix() {
-	POSTFIX_PID=$(cat /var/spool/postfix/pid/master.pid 2>/dev/null)
+	POSTFIX_PID=$(cat /var/mail/queue/pid/master.pid 2>/dev/null)
 	kill $POSTFIX_PID 2>/dev/null || echo "Couldn't terminate postfix since it is not running" >&2
 	awaitTermination $POSTFIX_PID
 }
@@ -224,11 +262,16 @@ terminateGracefully() {
 	exit 0
 }
 
+testContainerStarted() {
+	! ps -o comm | grep -Eq '^dovecot|^master' || (echo "Can be run as container start command only" >&2; false) || exit 1
+}
+
 # Register signal handler for orderly shutdown
 trap terminateGracefully SIGHUP SIGINT SIGQUIT SIGTERM
 
 case "$1" in
 	run)
+		testContainerStarted
 		setup
 		startSyslog
 		if [ ! "$LDAP_STARTUP_CHECK_ENABLED" = 'false' ]; then
