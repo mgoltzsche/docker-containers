@@ -40,7 +40,9 @@ setServerProp() {
 
 #setServerProp hhvm.server.type proxygen
 chown -R www-data:www-data /apps
-#printf '<?php\nprint "Hello world"\n?>' > index.php
+
+# Rehash mounted ca certificates
+c_rehash /etc/ssl/certs >/dev/null || exit 1
 
 case "$1" in
 	hhvm)

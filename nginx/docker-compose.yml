@@ -19,6 +19,9 @@ services:
       LDAP_BIND_PW: "${NGINX_LDAP_USER_PW}"
     ports:
       - "80:80"
+    volumes:
+      - "./ssl/web.key:/etc/ssl/private/server.key"
+      - "./ssl/web.pem:/etc/ssl/certs/server.pem"
 #    depends_on:
 #      - ldap
 #    links:

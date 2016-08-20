@@ -1,7 +1,10 @@
 server {
 	listen       80 default_server;
+	listen       443 ssl default_server;
 	server_name  default;
-	root /usr/share/nginx/www;	
+	ssl_certificate     /etc/ssl/certs/server.pem;
+	ssl_certificate_key /etc/ssl/private/server.key;
+	root /usr/share/nginx/www;
 
 	location = / {
 		# First attempt to serve request as file, then
