@@ -1,6 +1,6 @@
 #!/bin/sh
 
-SYSLOG_ENABLED=${SYSLOG_ENABLED:=false}
+SYSLOG_FORWARDING_ENABLED=${SYSLOG_FORWARDING_ENABLED:=false}
 SYSLOG_HOST=${SYSLOG_HOST:=syslog}
 SYSLOG_PORT=${SYSLOG_PORT:=514}
 LDAP_ENABLED=${LDAP_ENABLED:=false}
@@ -15,8 +15,8 @@ LDAP_GROUP_ATTR_IS_DN=${LDAP_GROUP_ATTR_IS_DN:=on}
 [ ! "$LDAP_ENABLED" = 'true' ] || [ ! "$LDAP_SUFFIX" = 'dc=' ] || (echo 'LDAP_SUFFIX not defined' >&2; false) || exit 1
 
 setupNginx() {
-	echo -n "Remote syslog support: "
-	if [ "$SYSLOG_ENABLED" = true ]; then
+	echo -n "Syslog forwarding support: "
+	if [ "$SYSLOG_FORWARDING_ENABLED" = true ]; then
 		echo "enabled"
 		awaitSuccess "Waiting for syslog UDP server $SYSLOG_HOST:$SYSLOG_PORT" nc -uzvw1 "$SYSLOG_HOST" "$SYSLOG_PORT"
 		cat > /etc/nginx/conf.d/logging.conf <<-EOF

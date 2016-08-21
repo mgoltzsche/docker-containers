@@ -179,7 +179,7 @@ startRsyslog() {
 	ps -C rsyslogd >/dev/null && return 1
 	# Configure syslog forwarding and wait for remote syslog server
 	RSYSLOG_FORWARDING_CFG=
-	if [ "$SYSLOG_REMOTE_ENABLED" = 'true' ]; then
+	if [ "$SYSLOG_FORWARDING_ENABLED" = 'true' ]; then
 		# TODO: Wait for remote syslog
 		#awaitSuccess "Waiting for remote syslog UDP server $SYSLOG_HOST:$SYSLOG_PORT" nc -uzvw1 "$SYSLOG_HOST" "$SYSLOG_PORT" 2>/dev/null
 		RSYSLOG_FORWARDING_CFG="*.* @$SYSLOG_HOST:$SYSLOG_PORT"

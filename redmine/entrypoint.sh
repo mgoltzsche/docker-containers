@@ -1,7 +1,7 @@
 #!/bin/sh
 
 export LOG_LEVEL=${LOG_LEVEL:-ERROR}
-export SYSLOG_REMOTE_ENABLED=${SYSLOG_REMOTE_ENABLED:-false}
+export SYSLOG_FORWARDING_ENABLED=${SYSLOG_FORWARDING_ENABLED:-false}
 export SYSLOG_HOST=${SYSLOG_HOST:-syslog}
 export SYSLOG_PORT=${SYSLOG_PORT:-514}
 HOST_DOMAIN=$(hostname -d)
@@ -92,7 +92,7 @@ setupRedmine() {
 
 	# Write log config
 	cat > ./config/additional_environment.rb <<-YML
-		if ENV['SYSLOG_REMOTE_ENABLED'] == 'true'
+		if ENV['SYSLOG_FORWARDING_ENABLED'] == 'true'
 		  config.logger = RemoteSyslogLogger.new(ENV['SYSLOG_HOST'], ENV['SYSLOG_PORT'], :program => 'redmine')
 		else
 		  config.logger = Logger.new(STDOUT)
@@ -102,7 +102,7 @@ setupRedmine() {
 	YML
 
 	# Wait for syslog server
-	[ ! "$SYSLOG_REMOTE_ENABLED" = 'true' ] \
+	[ ! "$SYSLOG_FORWARDING_ENABLED" = 'true' ] \
 		|| awaitSuccess "Wait for remote syslog UDP server $SYSLOG_HOST:$SYSLOG_PORT" nc -uzvw1 "$SYSLOG_HOST" "$SYSLOG_PORT"
 
 	# Ensure the right database adapter is active in Gemfile.lock

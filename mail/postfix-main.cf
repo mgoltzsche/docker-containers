@@ -80,18 +80,19 @@ smtpd_helo_restrictions = permit_sasl_authenticated,
 	reject_rhsbl_client zen.spamhaus.org,
 	reject_rhsbl_helo dbl.spamhaus.org
 smtpd_sender_login_maps = ldap:/etc/postfix/ldap/virtual_senders.cf
+# Apply all checks also to user to make it impossible to send mail from mailserver whose sender does not belong to the mailserver itself (such mail would also be rejected at least by gmx.de)
 smtpd_sender_restrictions = reject_non_fqdn_sender,
 	reject_sender_login_mismatch,
-	permit_sasl_authenticated,
-	permit_mynetworks,
+	reject_unlisted_sender,
 	reject_unknown_sender_domain,
-	reject_unlisted_sender
+	permit_sasl_authenticated,
+	permit_mynetworks
 smtpd_recipient_restrictions = reject_non_fqdn_recipient,
 	reject_unknown_recipient_domain,
 	permit_sasl_authenticated,
 	permit_mynetworks,
-	reject_unauth_destination,
 	reject_unknown_client_hostname,
+	reject_unauth_destination,
 	reject_rhsbl_reverse_client dbl.spamhaus.org,
 	reject_rhsbl_sender dbl.spamhaus.org,
 	reject_rhsbl_client dbl.spamhaus.org,

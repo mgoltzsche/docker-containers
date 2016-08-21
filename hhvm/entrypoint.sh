@@ -28,6 +28,7 @@ terminateGracefully() {
 	terminatePid $HHVM_PID
 	terminatePid $LOG_PIPE_LOOP_PID
 	terminatePid $(ps -o pid -C 'cat /var/log/hhvm/error.log' | tail -1)
+	terminatePid $SYSLOG_PID
 	exit 0
 }
 
@@ -38,6 +39,31 @@ setServerProp() {
 	echo "$KEY = $2" >> /etc/hhvm/server.ini # Add property to file
 }
 
+# Starts a local syslog server to collect (and forward) HHVM/PHP logs.
+startRsyslog() {
+	echo "Starting rsyslogd ..."
+	rm -f /var/run/syslogd.pid || exit 1
+	SYSLOG_FORWARDING_CFG=
+	if [ "$SYSLOG_FORWARDING_ENABLED" = 'true' ]; then
+		awaitSuccess "Waiting for syslog UDP server $SYSLOG_HOST:$SYSLOG_PORT" nc -uzvw1 "$SYSLOG_HOST" "$SYSLOG_PORT"
+		SYSLOG_FORWARDING_CFG="*.* @$SYSLOG_HOST:$SYSLOG_PORT"
+	fi
+
+	cat > /etc/rsyslog.conf <<-EOF
+		\$ModLoad imuxsock.so # provides local unix socket under /dev/log
+		\$template stdoutfmt,"%syslogtag% %msg%\n" # light stdout format
+
+		$SYSLOG_FORWARDING_CFG
+		*.* /dev/stdout;stdoutfmt
+	EOF
+	[ $? -eq 0 ] &&
+	chmod 444 /etc/rsyslog.conf || exit 1
+
+	rsyslogd -n -f /etc/rsyslog.conf & # Run rsyslogd in background
+	SYSLOG_PID=$!
+	awaitSuccess 'Waiting for local rsyslog' [ -S /dev/log ]
+}
+
 #setServerProp hhvm.server.type proxygen
 chown -R www-data:www-data /apps
 
@@ -46,7 +72,9 @@ c_rehash /etc/ssl/certs >/dev/null || exit 1
 
 case "$1" in
 	hhvm)
+		! ps -C hhvm >/dev/null || (echo "HHVM already running" >&2; false) || exit 1
 		trap terminateGracefully 1 2 3 15
+		startRsyslog
 		for INIT_SCRIPT in $(find /conf.d -name *.sh); do
 			sh $INIT_SCRIPT || exit 1
 		done
@@ -58,7 +86,7 @@ case "$1" in
 			cat /var/log/hhvm/error.log # Log into named pipe since hhvm user cannot log into /dev/stderr
 		done &
 		LOG_PIPE_LOOP_PID=$!
-		# TODO: handle PHP error_log
+		# TODO: handle PHP error_log if not already done by both processes piping in same pipe
 		gosu www-data $@ &
 		HHVM_PID=$!
 		wait

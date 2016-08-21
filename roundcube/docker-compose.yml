@@ -26,10 +26,11 @@ services:
       DB_PASSWORD: "${ROUNDCUBE_POSTGRES_PASSWORD}"
       LDAP_USER_DN: "${REDMINE_LDAP_USER_DN}"
       LDAP_USER_PW: "${REDMINE_LDAP_USER_PW}"
+      RC_ENABLE_INSTALLER: 'false'
     ports:
       - "9000:9000"
     volumes:
-      - "./work/ssl/certs/ca-cert.pem:/etc/ssl/certs/ca-cert.pem"
+      - "../ca/ssl/certs/cacert.pem:/etc/ssl/certs/cacert.pem"
 #    depends_on:
 #      - postgres
 #      - mail

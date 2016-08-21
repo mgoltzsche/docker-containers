@@ -1,6 +1,6 @@
 #!/bin/sh
 
-SYSLOG_REMOTE_ENABLED=${SYSLOG_REMOTE_ENABLED:=false}
+SYSLOG_FORWARDING_ENABLED=${SYSLOG_FORWARDING_ENABLED:=false}
 SYSLOG_HOST=${SYSLOG_HOST:=syslog}
 SYSLOG_PORT=${SYSLOG_PORT:=514}
 PG_ENCODING=${PG_ENCODING:=utf8}
@@ -165,8 +165,9 @@ backupClient() {
 
 # Starts a local syslog server to collect and forward postgres logs.
 startRsyslog() {
+	echo "Starting rsyslogd ..."
 	SYSLOG_FORWARDING_CFG=
-	if [ "$SYSLOG_REMOTE_ENABLED" = 'true' ]; then
+	if [ "$SYSLOG_FORWARDING_ENABLED" = 'true' ]; then
 		awaitSuccess "Waiting for syslog UDP server $SYSLOG_HOST:$SYSLOG_PORT" nc -uzvw1 "$SYSLOG_HOST" "$SYSLOG_PORT"
 		SYSLOG_FORWARDING_CFG="*.* @$SYSLOG_HOST:$SYSLOG_PORT"
 	fi

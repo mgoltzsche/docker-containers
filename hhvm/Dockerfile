@@ -10,7 +10,7 @@ RUN DEBIAN_FRONTEND=noninteractive \
 	apt-key adv --recv-keys --keyserver hkp://keyserver.ubuntu.com:80 0x5a16e7281be7a449 \
 	&& echo deb http://dl.hhvm.com/debian $HHVM_VERSION main > /etc/apt/sources.list.d/hhvm.list \
 	&& apt-get update \
-	&& apt-get install -y --force-yes --no-install-recommends hhvm hhvm-dev libpq5 libpq-dev ca-certificates curl \
+	&& apt-get install -y --force-yes --no-install-recommends rsyslog hhvm hhvm-dev libpq5 libpq-dev ca-certificates curl \
 	&& git clone git://github.com/PocketRent/hhvm-pgsql --branch $HHVM_PGSQL_VERSION --single-branch --depth=1 \
 	&& cd hhvm-pgsql \
 	&& hphpize \
@@ -33,9 +33,7 @@ RUN set -x \
 	&& chmod +x /usr/local/bin/gosu \
 	&& gosu nobody true
 
-RUN curl -fSL -o /etc/hhvm/mime.types http://svn.apache.org/repos/asf/httpd/httpd/trunk/docs/conf/mime.types
-#ENV MAGIC /etc/hhvm/mime.types
-
+RUN curl -fSL -o /etc/mime.types http://svn.apache.org/repos/asf/httpd/httpd/trunk/docs/conf/mime.types
 RUN chown -R www-data:www-data /var/run/hhvm
 RUN mkdir -m 770 /apps && chown www-data:www-data /apps
 RUN mkdir -m 775 /conf.d

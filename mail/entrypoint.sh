@@ -2,7 +2,7 @@
 
 MACHINE_FQN=${MACHINE_FQN:-$(hostname -f)}
 POSTMASTER_EMAIL=$POSTMASTER_EMAIL
-SYSLOG_REMOTE_ENABLED=${SYSLOG_REMOTE_ENABLED:=false}
+SYSLOG_FORWARDING_ENABLED=${SYSLOG_FORWARDING_ENABLED:=false}
 SYSLOG_HOST=${SYSLOG_HOST:=syslog}
 SYSLOG_PORT=${SYSLOG_PORT:=514}
 LDAP_DOMAIN=$(echo -n "$MACHINE_FQN" | sed -E 's/[^\.]+\.?//')
@@ -27,7 +27,11 @@ awaitSuccess() {
 
 setupSslCertificate() {
 	echo "Configuring SSL certificate ..."
-	mkdir -p -m 0755 /var/mail/ssl/private /var/mail/ssl/certs || exit 1
+	if [ -f "/etc/ssl/certs/server.pem" -a -f "/etc/ssl/private/server.key" ]; then
+		echo "Using provided SSL certificate /etc/ssl/{certs/server.pem,private/server.key}"
+		return 0
+	fi
+	mkdir -p -m 0755 /var/mail/ssl/private /var/mail/ssl/certs || return 1
 	KEY_FILE="/var/mail/ssl/private/$MACHINE_FQN-key.key"
 	CERT_FILE="/var/mail/ssl/certs/$MACHINE_FQN-cert.pem"
 	SUBJ="$SSL_CERT_SUBJ/CN=$MACHINE_FQN"
@@ -45,20 +49,18 @@ setupSslCertificate() {
 			-subj "$SUBJ" -sha512 \
 			-keyout "$KEY_FILE" -out "$CERT_FILE" &&
 		chmod 600 "$KEY_FILE" || exit 1
-		# (TODO: sign certificate using CA sign service)
 	fi
 
-	rm -f /etc/ssl/certs/server.pem /etc/ssl/private/server.key /etc/ssl/certs/ca.pem &&
+	rm -f /etc/ssl/certs/server.pem /etc/ssl/private/server.key &&
 	c_rehash /etc/ssl/certs >/dev/null && # Map certificates
 	ln -s "$KEY_FILE" /etc/ssl/private/server.key &&
-	ln -s "$CERT_FILE" /etc/ssl/certs/server.pem &&
-	ln -s "/var/mail/ssl/certs/ca.pem" /etc/ssl/certs/ca.pem || exit 1
+	ln -s "$CERT_FILE" /etc/ssl/certs/server.pem || exit 1
 }
 
 setupRsyslog() {
 	# Wait until syslog server is available to capture log
 	RSYSLOG_FORWARDING_CFG=
-	if [ "$SYSLOG_REMOTE_ENABLED" = 'true' ]; then
+	if [ "$SYSLOG_FORWARDING_ENABLED" = 'true' ]; then
 		awaitSuccess "Waiting for syslog UDP server $SYSLOG_HOST:$SYSLOG_PORT" nc -uzvw1 "$SYSLOG_HOST" "$SYSLOG_PORT" 2>/dev/null
 		RSYSLOG_FORWARDING_CFG="*.* @$SYSLOG_HOST:$SYSLOG_PORT"
 	fi
@@ -78,7 +80,7 @@ setupRsyslog() {
 setupPostfix() {
 	LDAP_DOMAIN_QUERY='(associatedDomain=%s)'
 	LDAP_DOMAIN_ATTR='associatedDomain'
-	LDAP_MAILBOX_QUERY='(&(objectClass=inetOrgPerson)(|(mail=%s)(mailAlternateAddress=%s)))'
+	LDAP_MAILBOX_QUERY='(&(objectClass=mailRecipient)(|(mail=%s)(mailAlternateAddress=%s)))'
 	echo "Configuring postfix ..."
 	mkdir -p /etc/postfix/ldap &&
 	chmod 00755 /etc/postfix/ldap &&

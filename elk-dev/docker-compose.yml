@@ -26,7 +26,7 @@ services:
 #      service: mail
 #    environment:
 #      LDAP_STARTUP_CHECK_ENABLED: 'false'
-#      SYSLOG_REMOTE_ENABLED: "true"
+#      SYSLOG_FORWARDING_ENABLED: "true"
 #      SYSLOG_HOST: "logstash"
 #      SYSLOG_PORT: 1025
 #  postgres:
@@ -34,7 +34,7 @@ services:
 #      file: ../postgres/docker-compose.yml
 #      service: postgres
 #    environment:
-#      SYSLOG_REMOTE_ENABLED: "true"
+#      SYSLOG_FORWARDING_ENABLED: "true"
 #      SYSLOG_HOST: "logstash"
 #      SYSLOG_PORT: 10514
 #  redmine:
@@ -43,7 +43,7 @@ services:
 #    ports:
 #      - "3000:3000"
 #    environment:
-#      SYSLOG_REMOTE_ENABLED: "true"
+#      SYSLOG_FORWARDING_ENABLED: "true"
 #      SYSLOG_HOST: "logstash"
 #      SYSLOG_PORT: 10514
   ldap:
@@ -51,7 +51,7 @@ services:
       file: ../389ds/docker-compose.yml
       service: ldap
     environment:
-      SYSLOG_REMOTE_ENABLED: "true"
+      SYSLOG_FORWARDING_ENABLED: "true"
       SYSLOG_HOST: "logstash"
       SYSLOG_PORT: 10514
       LDAP_USER_DN_NGINX: "${NGINX_LDAP_USER_DN}"
@@ -60,7 +60,7 @@ services:
     image: algorythm/nginx:latest
     hostname: web.algorythm.de
     environment:
-      SYSLOG_ENABLED: "true"
+      SYSLOG_FORWARDING_ENABLED: "true"
       SYSLOG_HOST: "logstash"
       SYSLOG_PORT: 10514
       LDAP_ENABLED: "true"
