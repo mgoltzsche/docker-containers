@@ -58,6 +58,7 @@ setupSslCertificate() {
 }
 
 setupRsyslog() {
+	rm -f /var/run/rsyslogd.pid || exit 1
 	# Wait until syslog server is available to capture log
 	RSYSLOG_FORWARDING_CFG=
 	if [ "$SYSLOG_FORWARDING_ENABLED" = 'true' ]; then

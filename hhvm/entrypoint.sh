@@ -42,7 +42,7 @@ setServerProp() {
 # Starts a local syslog server to collect (and forward) HHVM/PHP logs.
 startRsyslog() {
 	echo "Starting rsyslogd ..."
-	rm -f /var/run/syslogd.pid || exit 1
+	rm -f /var/run/rsyslogd.pid || exit 1
 	SYSLOG_FORWARDING_CFG=
 	if [ "$SYSLOG_FORWARDING_ENABLED" = 'true' ]; then
 		awaitSuccess "Waiting for syslog UDP server $SYSLOG_HOST:$SYSLOG_PORT" nc -uzvw1 "$SYSLOG_HOST" "$SYSLOG_PORT"

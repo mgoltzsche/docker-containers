@@ -22,6 +22,7 @@ set -e
 	: ${RC_ENABLE_SPELLCHECK:=false}
 	: ${RC_ENABLE_INSTALLER:=true} # Set to true serves /installer
 	: ${RC_DES_KEY:=$(date +%s | sha256sum | base64 | head -c 24)}
+	: ${RC_DB_PREFIX:=rc_}
 	: ${DB_TYPE:=sqlite}
 	: ${DB_HOST:=postgres}
 	: ${DB_DATABASE:=}
@@ -32,6 +33,7 @@ case "$DB_TYPE" in
 	sqlite)
 		[ "$DB_DATABASE" ] || DB_DATABASE=/db/roundcube-sqlite.db
 		RC_DB_DSNW="sqlite:///$DB_DATABASE?mode=0646"
+		echo "WARN: Running roundcube with sqlite DB $DB_DATABASE" >&2
 	;;
 	pgsql)
 		[ "$DB_DATABASE" ] || DB_DATABASE=$DB_USERNAME
@@ -42,6 +44,17 @@ case "$DB_TYPE" in
 		exit 1
 	;;
 esac
+
+# Runs the provided command until it succeeds.
+# Takes the error message to be displayed if it doesn't succeed as first argument.
+awaitSuccess() {
+	MSG="$1"
+	shift
+	until $@; do
+		[ ! "$MSG" ] || echo "$MSG" >&2
+		sleep 1
+	done
+}
 
 writeConfig() {
 	echo 'Setting up roundcube with (see https://github.com/roundcube/roundcubemail/wiki/Configuration):'
@@ -68,9 +81,27 @@ setupInstaller() {
 		cp -r /roundcube-installer /roundcube/installer &&
 		chown -R root:www-data /roundcube/installer
 	else
-		rm -rf /roundcube/installer || return 1
+		rm -rf /roundcube/installer
 	fi
 }
 
+waitForDB() {
+	if [ "$DB_TYPE" = "pgsql" ]; then
+		export PDO_DB_DSN="pgsql:host=$DB_HOST;port=5432;dbname=$DB_DATABASE"
+		export PDO_DB_USERNAME="$DB_USERNAME"
+		export PDO_DB_PASSWORD="$DB_PASSWORD"
+		awaitSuccess "Waiting for postgres DB server $DB_HOST:5432" gosu www-data hhvm -c /etc/hhvm/server.ini /etc/hhvm/testdb.php
+		unset PDO_DB_DSN PDO_DB_USERNAME PDO_DB_PASSWORD
+	fi
+}
+
+initDBIfEmpty() {
+	# TODO: Fix call
+	#gosu www-data hhvm -c /etc/hhvm/server.ini /roundcube/installer/initdb.php
+	true
+}
+
 writeConfig &&
-setupInstaller
+setupInstaller &&
+waitForDB &&
+initDBIfEmpty

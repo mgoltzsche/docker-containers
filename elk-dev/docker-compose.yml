@@ -20,15 +20,40 @@ services:
       - elasticsearch
     links:
       - elasticsearch
-#  mail:
-#    extends:
-#      file: ../mail/docker-compose.yml
-#      service: mail
-#    environment:
-#      LDAP_STARTUP_CHECK_ENABLED: 'false'
-#      SYSLOG_FORWARDING_ENABLED: "true"
-#      SYSLOG_HOST: "logstash"
-#      SYSLOG_PORT: 1025
+  ldap:
+    extends:
+      file: ../389ds/docker-compose.yml
+      service: ldap
+    environment:
+      SYSLOG_FORWARDING_ENABLED: "true"
+      SYSLOG_HOST: "logstash"
+      SYSLOG_PORT: 10514
+      LDAP_USER_DN_MAIL: "${MAIL_LDAP_USER_DN}"
+      LDAP_USER_PW_MAIL: "${MAIL_LDAP_USER_PW}"
+      LDAP_USER_DN_NGINX: "${NGINX_LDAP_USER_DN}"
+      LDAP_USER_PW_NGINX: "${NGINX_LDAP_USER_PW}"
+  mail:
+    extends:
+      file: ../mail/docker-compose.yml
+      service: mail
+    environment:
+      LDAP_STARTUP_CHECK_ENABLED: 'false'
+      SYSLOG_FORWARDING_ENABLED: "true"
+      SYSLOG_HOST: "logstash"
+      SYSLOG_PORT: 10514
+      LDAP_USER_DN: "${MAIL_LDAP_USER_DN}"
+      LDAP_USER_PW: "${MAIL_LDAP_USER_PW}"
+      POSTMASTER_EMAIL: max.goltzsche@algorythm.de
+      TRUSTED_NETWORKS: 'true'
+  roundcube:
+    image: algorythm/roundcube:latest
+    hostname: webmail.algorythm.de
+    environment:
+      SYSLOG_FORWARDING_ENABLED: "true"
+      SYSLOG_HOST: "logstash"
+      SYSLOG_PORT: 10514
+    ports:
+      - "9000:9000"
 #  postgres:
 #    extends:
 #      file: ../postgres/docker-compose.yml
@@ -46,16 +71,6 @@ services:
 #      SYSLOG_FORWARDING_ENABLED: "true"
 #      SYSLOG_HOST: "logstash"
 #      SYSLOG_PORT: 10514
-  ldap:
-    extends:
-      file: ../389ds/docker-compose.yml
-      service: ldap
-    environment:
-      SYSLOG_FORWARDING_ENABLED: "true"
-      SYSLOG_HOST: "logstash"
-      SYSLOG_PORT: 10514
-      LDAP_USER_DN_NGINX: "${NGINX_LDAP_USER_DN}"
-      LDAP_USER_PW_NGINX: "${NGINX_LDAP_USER_PW}"
   nginx:
     image: algorythm/nginx:latest
     hostname: web.algorythm.de

@@ -10,7 +10,7 @@ RUN DEBIAN_FRONTEND=noninteractive \
 	apt-key adv --recv-keys --keyserver hkp://keyserver.ubuntu.com:80 0x5a16e7281be7a449 \
 	&& echo deb http://dl.hhvm.com/debian $HHVM_VERSION main > /etc/apt/sources.list.d/hhvm.list \
 	&& apt-get update \
-	&& apt-get install -y --force-yes --no-install-recommends rsyslog hhvm hhvm-dev libpq5 libpq-dev ca-certificates curl \
+	&& apt-get install -y --force-yes --no-install-recommends hhvm hhvm-dev libpq5 libpq-dev ca-certificates curl rsyslog netcat \
 	&& git clone git://github.com/PocketRent/hhvm-pgsql --branch $HHVM_PGSQL_VERSION --single-branch --depth=1 \
 	&& cd hhvm-pgsql \
 	&& hphpize \

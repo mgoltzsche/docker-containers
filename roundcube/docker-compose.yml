@@ -24,9 +24,7 @@ services:
       DB_TYPE: pgsql
       DB_USERNAME: roundcube
       DB_PASSWORD: "${ROUNDCUBE_POSTGRES_PASSWORD}"
-      LDAP_USER_DN: "${REDMINE_LDAP_USER_DN}"
-      LDAP_USER_PW: "${REDMINE_LDAP_USER_PW}"
-      RC_ENABLE_INSTALLER: 'false'
+      RC_ENABLE_INSTALLER: 'true'
     ports:
       - "9000:9000"
     volumes:

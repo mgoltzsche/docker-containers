@@ -20,6 +20,8 @@ RUN rm -rf /roundcube/logs
 RUN chown -R root:www-data /roundcube && chmod 770 /roundcube/temp
 RUN mv /roundcube/installer /roundcube-installer
 RUN mkdir -m 0755 /db && chown www-data:www-data /db
+ADD testdb.php /etc/hhvm/
+ADD initdb.php /roundcube-installer/
 ADD entrypoint.sh /conf.d/configure-roundcube.sh
 
 WORKDIR /roundcube

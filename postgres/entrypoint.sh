@@ -172,7 +172,7 @@ startRsyslog() {
 		SYSLOG_FORWARDING_CFG="*.* @$SYSLOG_HOST:$SYSLOG_PORT"
 	fi
 
-	rm -f /var/run/syslogd.pid &&
+	rm -f /var/run/rsyslogd.pid &&
 	cat > /etc/rsyslog.conf <<-EOF
 		\$ModLoad imuxsock.so # provides local unix socket under /dev/log
 		\$ModLoad omstdout.so # provides messages to stdout
