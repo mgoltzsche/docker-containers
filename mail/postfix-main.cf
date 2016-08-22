@@ -79,14 +79,16 @@ smtpd_helo_restrictions = permit_sasl_authenticated,
 	reject_unknown_helo_hostname,
 	reject_rhsbl_client zen.spamhaus.org,
 	reject_rhsbl_helo dbl.spamhaus.org
-smtpd_sender_login_maps = ldap:/etc/postfix/ldap/virtual_senders.cf
+# ATTENTION: This config allows an authenticated user to send from any mail or mailAlternateAddress registered for his account. So do not write email addresses of domains not handled by this server in these fields.
 # Apply all checks also to user to make it impossible to send mail from mailserver whose sender does not belong to the mailserver itself (such mail would also be rejected at least by gmx.de)
+smtpd_sender_login_maps = ldap:/etc/postfix/ldap/virtual_senders.cf
 smtpd_sender_restrictions = reject_non_fqdn_sender,
 	reject_sender_login_mismatch,
 	reject_unlisted_sender,
 	reject_unknown_sender_domain,
 	permit_sasl_authenticated,
 	permit_mynetworks
+# If LDAP is offline server responds with "temporary lookup failure" (451) on incoming mail
 smtpd_recipient_restrictions = reject_non_fqdn_recipient,
 	reject_unknown_recipient_domain,
 	permit_sasl_authenticated,

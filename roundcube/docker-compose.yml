@@ -24,7 +24,7 @@ services:
       DB_TYPE: pgsql
       DB_USERNAME: roundcube
       DB_PASSWORD: "${ROUNDCUBE_POSTGRES_PASSWORD}"
-      RC_ENABLE_INSTALLER: 'true'
+      RC_ENABLE_INSTALLER: 'false'
     ports:
       - "9000:9000"
     volumes:

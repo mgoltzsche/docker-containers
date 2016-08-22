@@ -76,7 +76,7 @@ writeConfig() {
 	EOF
 }
 
-setupInstaller() {
+setupInstallerIfEnabled() {
 	if [ "$RC_ENABLE_INSTALLER" = 'true' ]; then
 		cp -r /roundcube-installer /roundcube/installer &&
 		chown -R root:www-data /roundcube/installer
@@ -85,23 +85,37 @@ setupInstaller() {
 	fi
 }
 
+testConfig() {
+	gosu www-data hhvm -c /etc/hhvm/server.ini /rcinit.php testconfig
+}
+
 waitForDB() {
 	if [ "$DB_TYPE" = "pgsql" ]; then
 		export PDO_DB_DSN="pgsql:host=$DB_HOST;port=5432;dbname=$DB_DATABASE"
 		export PDO_DB_USERNAME="$DB_USERNAME"
 		export PDO_DB_PASSWORD="$DB_PASSWORD"
-		awaitSuccess "Waiting for postgres DB server $DB_HOST:5432" gosu www-data hhvm -c /etc/hhvm/server.ini /etc/hhvm/testdb.php
+		awaitSuccess "Waiting for postgres DB server $DB_HOST:5432" gosu www-data hhvm -c /etc/hhvm/server.ini /rcinit.php testconnection
 		unset PDO_DB_DSN PDO_DB_USERNAME PDO_DB_PASSWORD
 	fi
 }
 
 initDBIfEmpty() {
-	# TODO: Fix call
-	#gosu www-data hhvm -c /etc/hhvm/server.ini /roundcube/installer/initdb.php
-	true
+	if ! gosu www-data hhvm -c /etc/hhvm/server.ini /rcinit.php testschema; then
+		gosu www-data hhvm -c /etc/hhvm/server.ini /rcinit.php initschema
+	fi
+}
+
+waitForMailServer() {
+	if [ ! "$SKIP_MAIL_SERVER_CHECK" ]; then
+		awaitSuccess "Waiting for MDA on $RC_DEFAULT_HOST:$RC_DEFAULT_PORT" nc -zvw1 "$RC_DEFAULT_HOST" "$RC_DEFAULT_PORT" &&
+		awaitSuccess "Waiting for MTA on $RC_SMTP_SERVER:$RC_SMTP_PORT" nc -zvw1 "$RC_SMTP_SERVER" "$RC_SMTP_PORT"
+	fi
 }
 
 writeConfig &&
-setupInstaller &&
+testConfig &&
+setupInstallerIfEnabled &&
 waitForDB &&
-initDBIfEmpty
+initDBIfEmpty &&
+waitForMailServer
+

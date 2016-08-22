@@ -31,7 +31,8 @@ setupPostgres() {
 		FIRST_START='true'
 		echo "Setting up initial database in $PGDATA"
 		# --auth-host=md5 forces password authentication for TCP connections
-		eval "gosu postgres initdb $PG_INITDB_ARGS --auth-host=md5" || exit 1
+		# (Startup warning to use these parameters can be ignored)
+		gosu postgres initdb --auth-host=md5 $PG_INITDB_ARGS || exit 1
 	fi
 
 	# Start postgres locally for user and DB setup
@@ -166,13 +167,13 @@ backupClient() {
 # Starts a local syslog server to collect and forward postgres logs.
 startRsyslog() {
 	echo "Starting rsyslogd ..."
+	rm -f /var/run/rsyslogd.pid || exit 1
 	SYSLOG_FORWARDING_CFG=
 	if [ "$SYSLOG_FORWARDING_ENABLED" = 'true' ]; then
 		awaitSuccess "Waiting for syslog UDP server $SYSLOG_HOST:$SYSLOG_PORT" nc -uzvw1 "$SYSLOG_HOST" "$SYSLOG_PORT"
 		SYSLOG_FORWARDING_CFG="*.* @$SYSLOG_HOST:$SYSLOG_PORT"
 	fi
 
-	rm -f /var/run/rsyslogd.pid &&
 	cat > /etc/rsyslog.conf <<-EOF
 		\$ModLoad imuxsock.so # provides local unix socket under /dev/log
 		\$ModLoad omstdout.so # provides messages to stdout
