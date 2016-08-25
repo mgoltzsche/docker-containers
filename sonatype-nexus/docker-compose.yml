@@ -1,0 +1,21 @@
+version: '2'
+services:
+  ldap:
+    extends:
+      file: ../389ds/docker-compose.yml
+      service: ldap
+    environment:
+      LDAP_USER_DN_NEXUS: "${NEXUS_LDAP_USER_DN}"
+      LDAP_USER_PW_NEXUS: "${NEXUS_LDAP_USER_PW}"
+#    volumes:
+#      - "./data:/var/lib/dirsrv"
+  repository:
+    image: algorythm/sonatype-nexus:latest
+    hostname: repository.algorythm.de
+    ports:
+      - "8081:8081"
+    environment:
+      LDAP_USER_DN: "${NEXUS_LDAP_USER_DN}"
+      LDAP_USER_PW: "${NEXUS_LDAP_USER_PW}"
+    volumes:
+      - "./work:/data"
