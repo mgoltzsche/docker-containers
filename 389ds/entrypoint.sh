@@ -13,6 +13,7 @@ LDAP_OPTS=${LDAP_OPTS:=-x -h localhost -p "$LDAP_SERVER_PORT" -D "$LDAP_ROOT_DN"
 LDAP_ADMIN_DOMAIN=${LDAP_ADMIN_DOMAIN:=$(hostname -d)}
 LDAP_ADMIN_DOMAIN_SUFFIX=${LDAP_ADMIN_DOMAIN_SUFFIX:=$(echo "dc=$LDAP_ADMIN_DOMAIN" | sed 's/\./,dc=/g')}
 LDAP_SUFFIX=${LDAP_SUFFIX:=$LDAP_ADMIN_DOMAIN_SUFFIX}
+LDAP_ALLOW_ANONYMOUS_ACCESS=${LDAP_ALLOW_ANONYMOUS_ACCESS:=off} # off|rootdse|on
 
 setupDirsrvInstance() {
 	if [ -d "$INSTANCE_DIR" ]; then
@@ -76,7 +77,7 @@ setupDirsrvInstance() {
 	rm -rf /tmp/ds-config.inf 2>/dev/null
 }
 
-setupSystemUsers() {
+configureSystemUsers() {
 	LDAP_USERS="$(set | grep -Eo '^LDAP_USER_DN_[^=]+' | sed 's/^LDAP_USER_DN_//')" # prevent user created from LDAP_USER_*_PASSWORD var
 
 	if [ "$LDAP_USERS" ]; then
@@ -160,9 +161,19 @@ waitForTcpService() {
 	awaitSuccess "Waiting for TCP service $1:$2" timeout 1 bash -c "</dev/tcp/$1/$2"
 }
 
-setupSlapdLogging() {
+configureAnonymousAccess() {
+	if [ "$LDAP_ALLOW_ANONYMOUS_ACCESS" ]; then
+		ldapmodify $LDAP_OPTS >/dev/null <<-EOF
+			dn: cn=config
+			changetype: modify
+			
+		EOF
+	fi
+}
+
+configureInstance() {
 	waitForTcpService localhost $LDAP_SERVER_PORT
-	echo "Configuring slapd syslog logging"
+	echo "Configuring slapd syslog logging and anonymous access: $LDAP_ALLOW_ANONYMOUS_ACCESS"
 	ldapmodify $LDAP_OPTS >/dev/null <<-EOF
 		dn: cn=config
 		changetype: modify
@@ -171,6 +182,9 @@ setupSlapdLogging() {
 		-
 		replace: nsslapd-accesslog-logbuffering
 		nsslapd-accesslog-logbuffering: off
+		-
+		replace: nsslapd-allow-anonymous-access
+		nsslapd-allow-anonymous-access: $LDAP_ALLOW_ANONYMOUS_ACCESS
 	EOF
 	[ $? -eq 0 ] || exit 1
 }
@@ -227,7 +241,7 @@ backup() {
 }
 
 restore() {
-	([ "$1" ] || (echo "Usage: restore BACKUPFILE (tar.bz2)" >&2; false)) &&
+	([ "$1" ] || (echo "LDAP_INSTALL_BACKUP_FILE (tar.bz2) not set" >&2; false)) &&
 	([ -f "$1" ] || (echo "Backup file $1 does not exist" >&2; false)) &&
 	([ ! "$(slapdPID)" ] || (echo "You must terminate ns-slapd before you can restore dump" >&2; false)) || exit 1
 	echo "Restoring backup $1"
@@ -274,10 +288,10 @@ case "$1" in
 			[ ! "$(slapdPID)" ] || (echo "ns-slapd is already running" >&2; false) || exit 1
 		fi
 		if [ ! "$(slapdPID)" ]; then
-			[ ! "$FIRST_START" -a ! "$LDAP_INSTALL_BACKUP_FILE" ] || restore "$LDAP_INSTALL_BACKUP_FILE" || exit 1
+			[ ! "$FIRST_START" -o ! "$LDAP_INSTALL_BACKUP_FILE" ] || restore "$LDAP_INSTALL_BACKUP_FILE" || exit 1
 			ns-slapd -D "$INSTANCE_DIR" $SLAPD_ARGS || exit $?
-			setupSlapdLogging || exit 1
-			setupSystemUsers || exit 1
+			configureInstance || exit 1
+			configureSystemUsers || exit 1
 		fi
 
 		trap terminateGracefully SIGHUP SIGINT SIGQUIT SIGTERM # Register signal handler for graceful shutdown
