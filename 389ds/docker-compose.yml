@@ -6,7 +6,7 @@ services:
     ports:
       - "389:389"
     environment:
-      LDAP_ROOT_DN_PWD: "${LDAP_ROOT_DN_PWD}"
+      NSSLAPD_ROOTPW: "${LDAP_ROOT_DN_PWD}"
       LDAP_INSTALL_BACKUP_FILE: "/backup/ldap-bak.tar.bz2"
     volumes:
       - "./work:/backup"

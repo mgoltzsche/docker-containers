@@ -3,25 +3,40 @@
 FULL_MACHINE_NAME=$(hostname -f)
 INSTANCE_ID=${INSTANCE_ID:=$(hostname -s)}
 INSTANCE_DIR="/etc/dirsrv/slapd-$INSTANCE_ID"
-INSTANCE_LOG_DIR="/var/log/dirsrv/slapd-$INSTANCE_ID"
 
-# Attention set cannot be used since it changes program arguments which are required below
-LDAP_SERVER_PORT=${LDAP_SERVER_PORT:=389}
-LDAP_ROOT_DN=${LDAP_ROOT_DN:='cn=dirmanager'}
-LDAP_ROOT_DN_PWD=${LDAP_ROOT_DN_PWD:='Secret123'}
-LDAP_OPTS=${LDAP_OPTS:=-x -h localhost -p "$LDAP_SERVER_PORT" -D "$LDAP_ROOT_DN" -w "$LDAP_ROOT_DN_PWD"}
-LDAP_ADMIN_DOMAIN=${LDAP_ADMIN_DOMAIN:=$(hostname -d)}
-LDAP_ADMIN_DOMAIN_SUFFIX=${LDAP_ADMIN_DOMAIN_SUFFIX:=$(echo "dc=$LDAP_ADMIN_DOMAIN" | sed 's/\./,dc=/g')}
-LDAP_SUFFIX=${LDAP_SUFFIX:=$LDAP_ADMIN_DOMAIN_SUFFIX}
-LDAP_ALLOW_ANONYMOUS_ACCESS=${LDAP_ALLOW_ANONYMOUS_ACCESS:=off} # off|rootdse|on
+NSSLAPD_LISTENHOST=${NSSLDAPD_LISTENHOST:=0.0.0.0}
+NSSLAPD_PORT=${NSSLAPD_PORT:=389}
+NSSLAPD_ROOTDN=${NSSLAPD_ROOTDN:='cn=dirmanager'}
+NSSLAPD_ROOTPW=${NSSLAPD_ROOTPW:=Secret123}
+NSSLAPD_ALLOW_ANONYMOUS_ACCESS=${NSSLAPD_ALLOW_ANONYMOUS_ACCESS:=off} # off|rootdse|on
+NSSLAPD_ACCESSLOG_LOGGING_ENABLED=${NSSLAPD_ACCESSLOG_LOGGING_ENABLED:=on}
+NSSLAPD_LOGGING_BACKEND=syslog
+NSSLAPD_ACCESSLOG_LOGBUFFERING=off
+# (Add any valid 389ds cn=config attribute as env var)
+
+LDAP_OPTS=${LDAP_OPTS:=-x -h localhost -p "$NSSLAPD_PORT" -D "$NSSLAPD_ROOTDN" -w "$NSSLAPD_ROOTPW"}
+echo "$LDAP_OPTS"
+LDAP_INSTALL_DOMAIN=${LDAP_INSTALL_DOMAIN:=$(hostname -d)}
+LDAP_INSTALL_SUFFIX=${LDAP_INSTALL_SUFFIX:=$(echo "dc=$LDAP_INSTALL_DOMAIN" | sed 's/\./,dc=/g')}
+LDAP_INSTALL_ADMIN_DOMAIN=${LDAP_INSTALL_ADMIN_DOMAIN:=$LDAP_INSTALL_DOMAIN}
+LDAP_INSTALL_ADMIN_DOMAIN_SUFFIX=${LDAP_INSTALL_ADMIN_DOMAIN_SUFFIX:=$LDAP_INSTALL_SUFFIX}
+
+checkContainer() {
+	if [ -z "$NSSLAPD_ROOTPW" ] || [ "$NSSLAPD_ROOTPW" = 'Secret123' ]; then
+		NSSLAPD_ROOTPW='Secret123'
+		echo '####################################################' >&2
+		echo '# WARN: No NSSLAPD_ROOTPW env var set.' >&2
+		echo "# Using default password: '$NSSLAPD_ROOTPW'" >&2
+		echo '####################################################' >&2
+	fi
+	if ! echo "$FULL_MACHINE_NAME" | grep -q '\.'; then
+		echo "Set a fully qualified hostname using docker's -h option. E.g: -h host.domain" >&2
+		exit 1
+	fi
+}
 
 setupDirsrvInstance() {
 	if [ -d "$INSTANCE_DIR" ]; then
-		# Reset directory manager password if instance already configured
-		echo "Resetting directory manager password"
-		ROOT_PWD_HASH=$(encodeLdapPassword "$LDAP_ROOT_DN_PWD") &&
-		ROOT_PWD_HASH=$(echo "$ROOT_PWD_HASH" | xargs | sed -E 's/ +/\\n /') &&
-		sed -i -E "s/^(nsslapd-rootpw:) .*/\1: $ROOT_PWD_HASH/g" "$INSTANCE_DIR/dse.ldif" || exit 1
 		return 0 # Skip setup if already configured
 	fi
 
@@ -31,37 +46,28 @@ setupDirsrvInstance() {
 	: ${LDAP_INSTALL_BACKUP_FILE:=}
 	: ${LDAP_INSTALL_INF_FILE:=/tmp/ds-config.inf}
 	: ${LDAP_INSTALL_LDIF_FILE:=suggest}
-	: ${LDAP_CONFIG_DIRECTORY_ADMIN_ID:=admin}
-	: ${LDAP_CONFIG_DIRECTORY_ADMIN_PWD:=$LDAP_ROOT_DN_PWD}
+	: ${LDAP_INSTALL_CONFIG_DIRECTORY_ADMIN_ID:=admin}
+	: ${LDAP_INSTALL_CONFIG_DIRECTORY_ADMIN_PW:=$NSSLAPD_ROOTPW}
 
 	if [ -f "$LDAP_INSTALL_INF_FILE" ]; then
 		echo "Installing LDAP server instance from configuration file $LDAP_INSTALL_INF_FILE"
 	else
-		if [ -z "$LDAP_ROOT_DN_PWD" ] || [ "$LDAP_ROOT_DN_PWD" = 'Secret123' ]; then
-			LDAP_ROOT_DN_PWD='Secret123'
-			echo "WARN: No LDAP_ROOT_DN_PWD env var set. Using default password: '$LDAP_ROOT_DN_PWD'." >&2
-		fi
-		if ! echo "$FULL_MACHINE_NAME" | grep -q '\.'; then
-			echo "Set a fully qualified hostname using docker's -h option. E.g: -h host.domain" >&2
-			exit 1
-		fi
-
-		echo "Installing LDAP server instance with:$(echo '';set | grep -E '^LDAP_' | sed -E 's/(^[^=]+_PWD=).+/\1***/' | grep -Ev '^LDAP_USER_' | xargs -n1 echo ' ')"
+		echo "Installing new LDAP instance with:$(echo;set | grep -E '^LDAP_INSTALL_' | sed -E 's/(^[^=]+_PW=).+/\1***/' | xargs -n1 echo ' ')"
 		cat > "$LDAP_INSTALL_INF_FILE" <<-EOF
 			[General]
 			FullMachineName= $FULL_MACHINE_NAME
-			AdminDomain= $LDAP_ADMIN_DOMAIN
+			AdminDomain= $LDAP_INSTALL_ADMIN_DOMAIN
 			SuiteSpotUserID= nobody
 			SuiteSpotGroup= nobody
-			ConfigDirectoryAdminID= $LDAP_CONFIG_DIRECTORY_ADMIN_ID
-			ConfigDirectoryAdminPwd= $LDAP_CONFIG_DIRECTORY_ADMIN_PWD
+			ConfigDirectoryAdminID= $LDAP_INSTALL_CONFIG_DIRECTORY_ADMIN_ID
+			ConfigDirectoryAdminPwd= $LDAP_INSTALL_CONFIG_DIRECTORY_ADMIN_PW
 
 			[slapd]
 			ServerIdentifier= $INSTANCE_ID
-			ServerPort= $LDAP_SERVER_PORT
-			Suffix= $LDAP_SUFFIX
-			RootDN= $LDAP_ROOT_DN
-			RootDNPwd= $LDAP_ROOT_DN_PWD
+			ServerPort= $NSSLAPD_PORT
+			Suffix= $LDAP_INSTALL_SUFFIX
+			RootDN= $NSSLAPD_ROOTDN
+			RootDNPwd= $NSSLAPD_ROOTPW
 			InstallLdifFile= $LDAP_INSTALL_LDIF_FILE
 		EOF
 		[ $? -eq 0 ] || exit 1
@@ -73,22 +79,48 @@ setupDirsrvInstance() {
     sed -i '/if (@errs = startServer($inf))/,/}/d' /usr/lib64/dirsrv/perl/*
 
 	# Install LDAP server with config file
-	setup-ds.pl -sdf "$LDAP_INSTALL_INF_FILE" || exit 1
-	rm -rf /tmp/ds-config.inf 2>/dev/null
+	setup-ds.pl -sdf "$LDAP_INSTALL_INF_FILE" &&
+	rm -rf /tmp/ds-config.inf "/var/log/dirsrv/slapd-$INSTANCE_ID/*" 2>/dev/null || exit 1
+}
+
+# Sets an instance config property (doesn't work if ns-slapd is running)
+setDseConfigAttr() {
+	if grep -q "^$1:.*" "$INSTANCE_DIR/dse.ldif"; then
+		# Update cfg property
+		sed -i "s/^$1:.*/$1: $2/" "$INSTANCE_DIR/dse.ldif"
+	else
+		# Add cfg property
+		sed -i "/^nsslapd-port: .*/a$1: $2" "$INSTANCE_DIR/dse.ldif"
+	fi
+}
+
+configureInstance() {
+	NSSLAPD_ROOTPW="$(pwdhash -s ssha512 "$NSSLAPD_ROOTPW")"
+	echo "Configuring LDAP instance with: $(echo; set | grep -E '^NSSLAPD_' | sed -E 's/(^[^=]+(_ROOTPW)=).+/\1***/' | xargs -n1 echo ' ')"
+	for CFG_VAR in $(set | grep -Eo '^NSSLAPD_[^=]+'); do
+		CFG_KEY="$(echo -n "$CFG_VAR" | tr '[:upper:]' '[:lower:]' | tr _ -)"
+		CFG_VALUE="$(eval "echo \"\$$CFG_VAR\"" | sed 's/\//\\\//g')"
+		setDseConfigAttr "$CFG_KEY" "$CFG_VALUE" || return 1
+	done
 }
 
 configureSystemUsers() {
-	LDAP_USERS="$(set | grep -Eo '^LDAP_USER_DN_[^=]+' | sed 's/^LDAP_USER_DN_//')" # prevent user created from LDAP_USER_*_PASSWORD var
+	LDAP_USERS="$(set | grep -Eo '^LDAP_USER_DN_[^=]+' | sed 's/^LDAP_USER_DN_//')"
 
 	if [ "$LDAP_USERS" ]; then
-		waitForTcpService localhost $LDAP_SERVER_PORT
+		# Start local ns-slapd to configure users quietly
+		setDseConfigAttr nsslapd-listenhost 127.0.0.1 &&
+		setDseConfigAttr nsslapd-accesslog-logging-enabled off &&
+		startDirsrv &&
+		waitForTcpService localhost $NSSLAPD_PORT
 
+		# Configure users
 		for LDAP_USER_KEY in "$LDAP_USERS"; do
-			LDAP_USER_DN=$(eval "echo \$LDAP_USER_DN_$LDAP_USER_KEY")
-			LDAP_USER_PASSWORD=$(eval "echo \$LDAP_USER_PW_$LDAP_USER_KEY")
-			LDAP_USER_PW_HASH=$(encodeLdapPassword "$LDAP_USER_PASSWORD")
+			LDAP_USER_DN="$(eval "echo \"\$LDAP_USER_DN_$LDAP_USER_KEY\"")"
+			LDAP_USER_PASSWORD="$(eval "echo \"\$LDAP_USER_PW_$LDAP_USER_KEY\"")"
+			LDAP_USER_PW_HASH=$(pwdhash -s ssha512 "$LDAP_USER_PASSWORD" | base64 - | xargs | sed 's/ /\n /')
 			LDAP_USER_PREFIX=$(echo "$LDAP_USER_DN" | grep -Pio '^[a-z]+=[a-z0-9_\- ]+(?=,)' | sed 's/=/: /')
-			LDAP_USER_EMAIL=$(eval "echo \$LDAP_USER_EMAIL_$LDAP_USER_KEY")
+			LDAP_USER_EMAIL=$(eval "echo \"\$LDAP_USER_EMAIL_$LDAP_USER_KEY\"")
 			LDAP_USER_EMAIL=${LDAP_USER_EMAIL:-$(echo "$LDAP_USER_PREFIX" | grep -Po '(?<=: ).*')"@service.$LDAP_ADMIN_DOMAIN"}
 
 			if [ ! "$LDAP_USER_DN" ]; then
@@ -141,11 +173,12 @@ configureSystemUsers() {
 			fi
 			$LDAP_CHANGE_CMD $LDAP_OPTS >/dev/null <<< "$LDIF" || (echo "$LDIF">&2;false) || exit 1
 		done
-	fi
-}
 
-encodeLdapPassword() {
-	pwdhash -s ssha512 "$1" | base64 - | xargs | sed 's/ /\n /' || exit 1
+		# Terminate local ns-slapd and reset host and access log config
+		terminatePid $(slapdPID)
+		setDseConfigAttr nsslapd-listenhost "$NSSLAPD_LISTENHOST" &&
+		setDseConfigAttr nsslapd-accesslog-logging-enabled "$NSSLAPD_ACCESSLOG_LOGGING_ENABLED" || exit 1
+	fi
 }
 
 awaitSuccess() {
@@ -159,34 +192,6 @@ awaitSuccess() {
 
 waitForTcpService() {
 	awaitSuccess "Waiting for TCP service $1:$2" timeout 1 bash -c "</dev/tcp/$1/$2"
-}
-
-configureAnonymousAccess() {
-	if [ "$LDAP_ALLOW_ANONYMOUS_ACCESS" ]; then
-		ldapmodify $LDAP_OPTS >/dev/null <<-EOF
-			dn: cn=config
-			changetype: modify
-			
-		EOF
-	fi
-}
-
-configureInstance() {
-	waitForTcpService localhost $LDAP_SERVER_PORT
-	echo "Configuring slapd syslog logging and anonymous access: $LDAP_ALLOW_ANONYMOUS_ACCESS"
-	ldapmodify $LDAP_OPTS >/dev/null <<-EOF
-		dn: cn=config
-		changetype: modify
-		replace: nsslapd-logging-backend
-		nsslapd-logging-backend: syslog
-		-
-		replace: nsslapd-accesslog-logbuffering
-		nsslapd-accesslog-logbuffering: off
-		-
-		replace: nsslapd-allow-anonymous-access
-		nsslapd-allow-anonymous-access: $LDAP_ALLOW_ANONYMOUS_ACCESS
-	EOF
-	[ $? -eq 0 ] || exit 1
 }
 
 startRsyslog() {
@@ -218,7 +223,10 @@ startRsyslog() {
 		terminateGracefully # Terminate whole container if syslogd somehow terminates
 	) &
 	awaitSuccess 'Waiting for local rsyslog' [ -S /dev/log ]
-	rm -rf $INSTANCE_LOG_DIR/*
+}
+
+startDirsrv() {
+	ns-slapd -D "$INSTANCE_DIR" -i /var/run/dirsrv/ns-slapd.pid $@
 }
 
 backup() {
@@ -243,7 +251,7 @@ backup() {
 restore() {
 	([ "$1" ] || (echo "LDAP_INSTALL_BACKUP_FILE (tar.bz2) not set" >&2; false)) &&
 	([ -f "$1" ] || (echo "Backup file $1 does not exist" >&2; false)) &&
-	([ ! "$(slapdPID)" ] || (echo "You must terminate ns-slapd before you can restore dump" >&2; false)) || exit 1
+	(! ps -C ns-slapd >/dev/null || (echo "You must terminate ns-slapd before you can restore dump" >&2; false)) || exit 1
 	echo "Restoring backup $1"
 	setupDirsrvInstance # Install if directory doesn't exist
 	EXTRACT_DIR=$(mktemp -d)
@@ -263,21 +271,27 @@ restore() {
 }
 
 slapdPID() {
-	ps h -o pid -C ns-slapd
+	cat /var/run/dirsrv/ns-slapd.pid 2>/dev/null
+}
+
+terminatePid() {
+	kill "$1" 2>/dev/null
+	while [ ! -z "$1" ] && ps "$1" >/dev/null; do
+		sleep 1
+	done
 }
 
 terminateGracefully() {
 	trap : SIGHUP SIGINT SIGQUIT SIGTERM # Disable termination call on signal to avoid infinite recursion
 	for PID in $(slapdPID) $(ps h -o pid -C rsyslogd); do
-		kill "$PID" 2>/dev/null
-		while [ ! -z "$PID" ] && ps "$PID" >/dev/null; do
-			sleep 1
-		done
+		terminatePid "$PID"
 	done
 }
 
 case "$1" in
 	ns-slapd|ldapmodify|ldapadd|ldapdelete|ldapsearch)
+		trap terminateGracefully SIGHUP SIGINT SIGQUIT SIGTERM # Register signal handler for graceful shutdowns
+		checkContainer
 		setupDirsrvInstance # Installs if directory doesn't exist
 		startRsyslog # Starts if not started
 		CMD="$1"
@@ -285,21 +299,23 @@ case "$1" in
 		SLAPD_ARGS=
 		if [ "$CMD" = ns-slapd ]; then
 			SLAPD_ARGS=$@
-			[ ! "$(slapdPID)" ] || (echo "ns-slapd is already running" >&2; false) || exit 1
+			! ps -C ns-slapd >/dev/null || (echo "ns-slapd is already running" >&2; false) || exit 1
+			rm -f /var/run/dirsrv/ns-slapd.pid
 		fi
-		if [ ! "$(slapdPID)" ]; then
-			[ ! "$FIRST_START" -o ! "$LDAP_INSTALL_BACKUP_FILE" ] || restore "$LDAP_INSTALL_BACKUP_FILE" || exit 1
-			ns-slapd -D "$INSTANCE_DIR" $SLAPD_ARGS || exit $?
-			configureInstance || exit 1
-			configureSystemUsers || exit 1
+		if ! ps -C ns-slapd >/dev/null; then
+			rm -f /var/log/dirsrv/slapd-ldap/*
+			([ ! "$FIRST_START" -o ! "$LDAP_INSTALL_BACKUP_FILE" ] || restore "$LDAP_INSTALL_BACKUP_FILE") &&
+			configureInstance &&
+			configureSystemUsers &&
+			startDirsrv $SLAPD_ARGS || exit 1
 		fi
 
-		trap terminateGracefully SIGHUP SIGINT SIGQUIT SIGTERM # Register signal handler for graceful shutdown
-
-		if [ "$CMD" = ns-slapd ]; then # LDAP operations
+		if [ "$CMD" = ns-slapd ]; then
+			# LDAP server started - wait
 			wait
 		else
-			waitForTcpService localhost $LDAP_SERVER_PORT
+			# LDAP operations
+			waitForTcpService localhost $NSSLAPD_PORT
 			"$CMD" $LDAP_OPTS $@
 			terminateGracefully
 		fi

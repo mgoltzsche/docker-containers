@@ -63,8 +63,8 @@ writeConfig() {
 	CFG_CONTENT=
 
 	for CFG_KEY_UPPER in $(set | grep -Eo '^RC_[^=]+' | sed 's/^RC_//'); do
-		CFG_KEY=$(echo -n "$CFG_KEY_UPPER" | tr '[:upper:]' '[:lower:]') # User name lower case
-		CFG_VAL=$(eval "echo \$RC_$CFG_KEY_UPPER")
+		CFG_KEY="$(echo -n "$CFG_KEY_UPPER" | tr '[:upper:]' '[:lower:]')" # User name lower case
+		CFG_VAL="$(eval "echo \"\$RC_$CFG_KEY_UPPER\"")"
 		echo "$CFG_KEY" | grep -Eq '^enable|^auto|level$|port$|_log$' || CFG_VAL="'$CFG_VAL'"
 		CFG_CONTENT="$(echo "$CFG_CONTENT"; echo "\$config['$CFG_KEY'] = $CFG_VAL;")"
 	done

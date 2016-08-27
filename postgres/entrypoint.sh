@@ -49,8 +49,8 @@ setupPostgres() {
 	fi
 
 	for PG_USER_KEY in $(set | grep -Eo '^PG_USER_[^=]+' | sed 's/^PG_USER_//'); do
-		PG_USER=$(echo -n "$PG_USER_KEY" | tr '[:upper:]' '[:lower:]') # User name lower case
-		PG_USER_PASSWORD=$(eval "echo \$PG_USER_$PG_USER_KEY")
+		PG_USER="$(echo -n "$PG_USER_KEY" | tr '[:upper:]' '[:lower:]')" # User name lower case
+		PG_USER_PASSWORD="$(eval "echo \"\$PG_USER_$PG_USER_KEY\"")"
 		PG_USER_DATABASE="$PG_USER"
 		# Create user
 		if ! gosu postgres psql -tAc "SELECT 1 FROM pg_roles WHERE rolname='$PG_USER'" | grep -q 1; then
