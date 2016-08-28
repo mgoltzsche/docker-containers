@@ -23,5 +23,5 @@ services:
       POSTMASTER_EMAIL: max.goltzsche@algorythm.de
     volumes:
 #      - "./work:/var/mail"
-      - "./../ssl/certs/mail.algorythm.de-cert.pem:/etc/ssl/certs/server.pem"
-      - "./../ssl/private/mail.algorythm.de-entity.key:/etc/ssl/private/server.key"
+      - "./../ssl/certs/mail.algorythm.de.pem:/etc/ssl/certs/server.pem"
+      - "./../ssl/private/mail.algorythm.de.key:/etc/ssl/private/server.key"

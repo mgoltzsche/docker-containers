@@ -81,5 +81,7 @@ services:
       LDAP_ENABLED: "true"
       LDAP_BIND_DN: "${NGINX_LDAP_USER_DN}"
       LDAP_BIND_PW: "${NGINX_LDAP_USER_PW}"
+      VHOST_MAIN_NAME: "mail.algorythm.de"
+      VHOST_MAIN_PROXY_PASS: "http://roundcube:9000/"
     ports:
       - "80:80"

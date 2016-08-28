@@ -20,14 +20,14 @@ showUsageAndExit() {
 		  decrypt OUTFILE
 		Examples:
 		  Key generation:
-		    $SCRIPT genkey mail-entity.key &&
-		    $SCRIPT gencert mail-entity.key mail-cert-req.csr mail.example.org
-		    # Send mail-cert-req.csr to CA and let it sign there with:
-		    $SCRIPT sign mail-cert-req.csr mail-cert.pem
+		    $SCRIPT genkey mail.key &&
+		    $SCRIPT gencert mail.key mail.csr mail.example.org
+		    # Send mail.csr (cert. req.) to CA and let it sign there with:
+		    $SCRIPT sign mail.csr mail.pem
 		  CA creation (key+cert) + entity key+cert generation and signing + verification:
 		    $SCRIPT initca example.org &&
-		    $SCRIPT gensignedcert mail-entity.key mail-cert.pem mail.example.org &&
-		    $SCRIPT verify mail-cert.pem
+		    $SCRIPT gensignedcert mail.key mail.pem mail.example.org &&
+		    $SCRIPT verify mail.pem
 		  Example with predefined directory and CNs only:
 		    $SCRIPT initca example.org &&
 		    $SCRIPT gensignedcerts exampledir mail.example.org web.example.org
@@ -184,10 +184,11 @@ generateSignedEntityCerts() {
 	mkdir -p "$SSL_DIR/private" "$SSL_DIR/certs" || return 1
 	shift
 	while [ $# -ne 0 ]; do
+		! [ "$1" = cacert -o "$1" = caroot ] || (echo "Reserved name" >&2; false) || exit 1
 		generateSignedEntityCert \
-			"$SSL_DIR/private/${1}-entity.key" \
-			"$SSL_DIR/certs/${1}-cert.csr" \
-			"$SSL_DIR/certs/${1}-cert.pem" \
+			"$SSL_DIR/private/${1}.key" \
+			"$SSL_DIR/certs/${1}.csr" \
+			"$SSL_DIR/certs/${1}.pem" \
 			"$1" || return 1
 		shift
 	done

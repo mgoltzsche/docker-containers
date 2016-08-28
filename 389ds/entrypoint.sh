@@ -86,10 +86,10 @@ setupDirsrvInstance() {
 # Sets an instance config property (doesn't work if ns-slapd is running)
 setDseConfigAttr() {
 	if grep -q "^$1:.*" "$INSTANCE_DIR/dse.ldif"; then
-		# Update cfg property
-		sed -i "s/^$1:.*/$1: $2/" "$INSTANCE_DIR/dse.ldif"
+		# Update config attribute (using perl to replace multiline attributes)
+		perl -i -p0e "s/\n$1:.*?\n([^ ]|\n|\$)/\n$1: $2\n\1/s" "$INSTANCE_DIR/dse.ldif"
 	else
-		# Add cfg property
+		# Add config attribute
 		sed -i "/^nsslapd-port: .*/a$1: $2" "$INSTANCE_DIR/dse.ldif"
 	fi
 }
@@ -115,13 +115,13 @@ configureSystemUsers() {
 		waitForTcpService localhost $NSSLAPD_PORT
 
 		# Configure users
-		for LDAP_USER_KEY in "$LDAP_USERS"; do
+		for LDAP_USER_KEY in $LDAP_USERS; do
 			LDAP_USER_DN="$(eval "echo \"\$LDAP_USER_DN_$LDAP_USER_KEY\"")"
 			LDAP_USER_PASSWORD="$(eval "echo \"\$LDAP_USER_PW_$LDAP_USER_KEY\"")"
 			LDAP_USER_PW_HASH=$(pwdhash -s ssha512 "$LDAP_USER_PASSWORD" | base64 - | xargs | sed 's/ /\n /')
 			LDAP_USER_PREFIX=$(echo "$LDAP_USER_DN" | grep -Pio '^[a-z]+=[a-z0-9_\- ]+(?=,)' | sed 's/=/: /')
 			LDAP_USER_EMAIL=$(eval "echo \"\$LDAP_USER_EMAIL_$LDAP_USER_KEY\"")
-			LDAP_USER_EMAIL=${LDAP_USER_EMAIL:-$(echo "$LDAP_USER_PREFIX" | grep -Po '(?<=: ).*')"@service.$LDAP_ADMIN_DOMAIN"}
+			LDAP_USER_EMAIL=${LDAP_USER_EMAIL:-$(echo "$LDAP_USER_PREFIX" | grep -Po '(?<=: ).*')"@service.$LDAP_INSTALL_DOMAIN"}
 
 			if [ ! "$LDAP_USER_DN" ]; then
 				echo "No LDAP user DN defined for $LDAP_USER_KEY" >&2
@@ -291,9 +291,6 @@ terminateGracefully() {
 case "$1" in
 	ns-slapd|ldapmodify|ldapadd|ldapdelete|ldapsearch)
 		trap terminateGracefully SIGHUP SIGINT SIGQUIT SIGTERM # Register signal handler for graceful shutdowns
-		checkContainer
-		setupDirsrvInstance # Installs if directory doesn't exist
-		startRsyslog # Starts if not started
 		CMD="$1"
 		shift
 		SLAPD_ARGS=
@@ -302,6 +299,9 @@ case "$1" in
 			! ps -C ns-slapd >/dev/null || (echo "ns-slapd is already running" >&2; false) || exit 1
 			rm -f /var/run/dirsrv/ns-slapd.pid
 		fi
+		checkContainer
+		setupDirsrvInstance # Installs if directory doesn't exist
+		startRsyslog # Starts if not started
 		if ! ps -C ns-slapd >/dev/null; then
 			rm -f /var/log/dirsrv/slapd-ldap/*
 			([ ! "$FIRST_START" -o ! "$LDAP_INSTALL_BACKUP_FILE" ] || restore "$LDAP_INSTALL_BACKUP_FILE") &&

@@ -8,12 +8,12 @@ services:
     environment:
       LDAP_USER_DN_NGINX: "${NGINX_LDAP_USER_DN}"
       LDAP_USER_PW_NGINX: "${NGINX_LDAP_USER_PW}"
-#    volumes:
-#      - "./data:/var/lib/dirsrv"
   nginx:
     image: algorythm/nginx:latest
     hostname: web.algorythm.de
     environment:
+#      VHOST_TEST_NAME: "test.algorythm.de"
+#      VHOST_TEST_PROXY_PASS: "http://ldap/"
       LDAP_ENABLED: "true"
       LDAP_BIND_DN: "${NGINX_LDAP_USER_DN}"
       LDAP_BIND_PW: "${NGINX_LDAP_USER_PW}"

@@ -33,10 +33,11 @@ RUN set -x \
 		--prefix=/usr/local/lib/nginx \
 		--user=nginx \
 		--group=nginx \
+		--pid-path=/var/run/nginx.pid \
 		--conf-path=/etc/nginx/nginx.conf \
+		--error-log-path=stderr \
+		--http-log-path=/dev/stdout \
 		--http-client-body-temp-path=/var/nginx-client-body \
-		--error-log-path=/var/log/nginx/error.log \
-		--http-log-path=/var/log/nginx/access.log \
 		--with-http_ssl_module \
 		--with-pcre-jit \
 		--with-http_gzip_static_module \
@@ -51,11 +52,12 @@ RUN set -x \
 	&& make \
 	&& make install \
 	&& ln -s /usr/local/lib/nginx/sbin/nginx /usr/local/bin/nginx \
-	&& mkdir -m 755 /etc/nginx/vhosts \
-	&& mkdir -m 755 /etc/nginx/conf.d \
+	&& ln -s /usr/local/lib/nginx /usr/share/nginx \
+	&& mkdir -m 755 /etc/nginx/vhosts-generated /etc/nginx/vhosts /etc/nginx/conf.d /var/cache/nginx \
 	&& rm -r $GNUPGHOME $DOWNLOAD_DIR $SRC_DIR \
 	&& apk del --purge $BUILD_DEPS
 
+VOLUME /etc/nginx/vhosts
 EXPOSE 80
 
 ADD nginx.conf /etc/nginx/

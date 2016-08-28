@@ -28,27 +28,30 @@ awaitSuccess() {
 setupSslCertificate() {
 	echo "Configuring SSL certificate ..."
 	if [ -f "/etc/ssl/certs/server.pem" -a -f "/etc/ssl/private/server.key" ]; then
-		echo "Using provided SSL certificate /etc/ssl/{certs/server.pem,private/server.key}"
+		echo "Using existing SSL certificate /etc/ssl/{certs/server.pem,private/server.key}"
 		return 0
 	fi
 	mkdir -p -m 0755 /var/mail/ssl/private /var/mail/ssl/certs || return 1
-	KEY_FILE="/var/mail/ssl/private/$MACHINE_FQN-key.key"
-	CERT_FILE="/var/mail/ssl/certs/$MACHINE_FQN-cert.pem"
+	KEY_FILE="/var/mail/ssl/private/$MACHINE_FQN.key"
+	CERT_FILE="/var/mail/ssl/certs/$MACHINE_FQN.pem"
 	SUBJ="$SSL_CERT_SUBJ/CN=$MACHINE_FQN"
 
 	if [ -f "$KEY_FILE" -a -f "$CERT_FILE" ]; then
 		echo "Using existing SSL certificate: $CERT_FILE"
 	elif [ -f "$KEY_FILE" ]; then
-		echo "Generating new SSL certificate for '$SUBJ' ..."
-		openssl req -new -days 730 -sha512 -subj "$SUBJ" \
-			-key "$KEY_FILE" -out "$CERT_FILE"
+		echo "WARN: Generating self-signed SSL certificate for '$SUBJ' using existing key $KEY_FILE"
+		touch "$CERT_FILE" &&
+		chmod 644 "$CERT_FILE" &&
+		ERR="$(openssl req -new -x509 -days 730 -sha512 -subj "$SUBJ" \
+			-key "$KEY_FILE" -out "$CERT_FILE" 2>&1)" || (echo "$ERR" >&2; false)
 	else
-		echo "Generating new SSL key+certificate for '$SUBJ' ..."
-		# -x509 means selfsigned/no cert. req.
-		openssl req -new -newkey rsa:4096 -days 730 -nodes -x509 \
+		echo "WARN: Generating self-signed SSL key+certificate for '$SUBJ' into $KEY_FILE"
+		touch "$KEY_FILE" &&
+		chmod 600 "$KEY_FILE" &&
+		# -x509 means self-signed/no cert. req.
+		ERR="$(openssl req -new -newkey rsa:4096 -x509 -days 730 -nodes \
 			-subj "$SUBJ" -sha512 \
-			-keyout "$KEY_FILE" -out "$CERT_FILE" &&
-		chmod 600 "$KEY_FILE" || exit 1
+			-keyout "$KEY_FILE" -out "$CERT_FILE" 2>&1)" || (echo "$ERR" >&2; false)
 	fi
 
 	rm -f /etc/ssl/certs/server.pem /etc/ssl/private/server.key &&
