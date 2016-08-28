@@ -67,13 +67,12 @@ setupVirtualHosts() {
 			PROXY_PASS="$(eval "echo \"\$VHOST_${VHOST}_PROXY_PASS\"")" # e.g.: http://127.0.0.1:8080/
 			([ "$PROXY_PASS" ] || (echo "VHOST_${VHOST}_PROXY_PASS is not defined" >&2; false)) &&
 			echo "Proxy $SERVER_NAME -> $PROXY_PASS" &&
-			setupSslCertificate "$SERVER_NAME"
+			setupSslCertificate "$SERVER_NAME" &&
 			cat > /etc/nginx/vhosts-generated/$VHOST_ID.conf <<-EOF
 				server {
 				  listen 80;
 				  listen 443 ssl;
 				  server_name $SERVER_NAME;
-				  #root /usr/share/nginx/html;
 
 				  ssl_certificate     /etc/nginx/ssl/certs/$SERVER_NAME.pem;
 				  ssl_certificate_key /etc/nginx/ssl/private/$SERVER_NAME.key;
@@ -81,7 +80,7 @@ setupVirtualHosts() {
 				  include proxy_params;
 
 				  location / {
-					proxy_pass $PROXY_PASS;
+				    proxy_pass $PROXY_PASS;
 				  }
 				}
 			EOF

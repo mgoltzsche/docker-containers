@@ -11,4 +11,4 @@ fi
 ca/ca.sh updateca || exit 1
 
 # Generate signed certificates
-ca/ca.sh gensignedcerts ./ssl mail.algorythm.de web.algorythm.de
+ca/ca.sh gensignedcerts ./ssl mail.algorythm.de redmine.algorythm.de

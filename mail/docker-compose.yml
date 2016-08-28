@@ -7,8 +7,6 @@ services:
     environment:
       LDAP_USER_DN_MAIL: "${MAIL_LDAP_USER_DN}"
       LDAP_USER_PW_MAIL: "${MAIL_LDAP_USER_PW}"
-#    volumes:
-#      - "./data:/var/lib/dirsrv"
   mail:
     image: algorythm/mail:latest
     hostname: mail.algorythm.de
@@ -22,6 +20,6 @@ services:
       LDAP_USER_PW: "${MAIL_LDAP_USER_PW}"
       POSTMASTER_EMAIL: max.goltzsche@algorythm.de
     volumes:
-#      - "./work:/var/mail"
       - "./../ssl/certs/mail.algorythm.de.pem:/etc/ssl/certs/server.pem"
       - "./../ssl/private/mail.algorythm.de.key:/etc/ssl/private/server.key"
+      #      - "./work:/var/mail"

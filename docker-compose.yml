@@ -42,10 +42,12 @@ services:
       SYSLOG_FORWARDING_ENABLED: "true"
       SYSLOG_HOST: "logstash"
       SYSLOG_PORT: 10514
-      LDAP_USER_DN_REDMINE: "${REDMINE_LDAP_USER_DN}"
-      LDAP_USER_PW_REDMINE: "${REDMINE_LDAP_USER_PW}"
       LDAP_USER_DN_MAIL: "${MAIL_LDAP_USER_DN}"
       LDAP_USER_PW_MAIL: "${MAIL_LDAP_USER_PW}"
+      LDAP_USER_DN_NGINX: "${NGINX_LDAP_USER_DN}"
+      LDAP_USER_PW_NGINX: "${NGINX_LDAP_USER_PW}"
+      LDAP_USER_DN_REDMINE: "${REDMINE_LDAP_USER_DN}"
+      LDAP_USER_PW_REDMINE: "${REDMINE_LDAP_USER_PW}"
 #    volumes:
 #      - "./data:/var/lib/dirsrv"
     depends_on:
@@ -80,6 +82,13 @@ services:
       - logstash
     links:
       - logstash
+  roundcube:
+    image: algorythm/roundcube:latest
+    hostname: webmail.algorythm.de
+    environment:
+      SYSLOG_FORWARDING_ENABLED: "true"
+      SYSLOG_HOST: "logstash"
+      SYSLOG_PORT: 10514
   redmine:
     extends:
       file: redmine/docker-compose.yml
@@ -93,3 +102,22 @@ services:
       - postgres
     links:
       - postgres
+  nginx:
+    image: algorythm/nginx:latest
+    hostname: web.algorythm.de
+    environment:
+      LDAP_ENABLED: "true"
+      LDAP_BIND_DN: "${NGINX_LDAP_USER_DN}"
+      LDAP_BIND_PW: "${NGINX_LDAP_USER_PW}"
+      VHOST_WEBMAIL_NAME: "mail.algorythm.de"
+      VHOST_WEBMAIL_PROXY_PASS: "http://roundcube:9000/"
+      VHOST_REDMINE_NAME: "redmine.algorythm.de"
+      VHOST_REDMINE_PROXY_PASS: "http://redmine:3000/"
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - "./ssl/private/mail.algorythm.de.key:/etc/nginx/ssl/private/mail.algorythm.de.key"
+      - "./ssl/certs/mail.algorythm.de.pem:/etc/nginx/ssl/certs/mail.algorythm.de.pem"
+      - "./ssl/private/redmine.algorythm.de.key:/etc/nginx/ssl/private/redmine.algorythm.de.key"
+      - "./ssl/certs/redmine.algorythm.de.pem:/etc/nginx/ssl/certs/redmine.algorythm.de.pem"

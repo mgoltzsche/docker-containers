@@ -83,5 +83,9 @@ services:
       LDAP_BIND_PW: "${NGINX_LDAP_USER_PW}"
       VHOST_MAIN_NAME: "mail.algorythm.de"
       VHOST_MAIN_PROXY_PASS: "http://roundcube:9000/"
+    volumes:
+      - "../ssl/private/mail.algorythm.de.key:/etc/nginx/ssl/private/mail.algorythm.de.key"
+      - "../ssl/certs/mail.algorythm.de.pem:/etc/nginx/ssl/certs/mail.algorythm.de.pem"
     ports:
       - "80:80"
+      - "443:443"

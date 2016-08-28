@@ -19,7 +19,10 @@ services:
       LDAP_BIND_PW: "${NGINX_LDAP_USER_PW}"
     ports:
       - "80:80"
+      - "443:443"
     volumes:
+      - "../ssl/private/mail.algorythm.de.key:/etc/nginx/ssl/private/mail.algorythm.de.key"
+      - "../ssl/certs/mail.algorythm.de.pem:/etc/nginx/ssl/certs/mail.algorythm.de.pem"
       - "./ssl/web.key:/etc/ssl/private/server.key"
       - "./ssl/web.pem:/etc/ssl/certs/server.pem"
 #    depends_on:
