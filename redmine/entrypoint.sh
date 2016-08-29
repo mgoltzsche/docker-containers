@@ -32,6 +32,9 @@ SMTP_DOMAIN=$(hostname -d)
 DB_ADAPTER=${DB_ADAPTER:-sqlite3}
 DB_ENCODING=${DB_ENCODING:-utf8}
 DB_BACKUP_PORT=${DB_BACKUP_PORT:-5433}
+INSTALL_BACKUP_FILE="$INSTALL_BACKUP_FILE"
+INSTALL_MIGRATE=${INSTALL_MIGRATE:-true}
+INSTALL_DEFAULT_DATA=${INSTALL_DEFAULT_DATA:-$(if [ "$INSTALL_BACKUP_FILE" ]; then echo false; else echo true; fi)}
 
 case "$DB_ADAPTER" in
 	postgresql)
@@ -56,7 +59,7 @@ esac
 
 setupRedmine() {
 	echo 'Setting up redmine with:'
-	set | grep -E '^DB_|^LOG_LEVEL=|^SYSLOG_|^LDAP_|^SMTP_' | sed -E 's/(^[^=]+_(PASSWORD|PW)=).+/\1***/i' | xargs -n1 echo ' ' # Show variables
+	set | grep -E '^DB_|^LOG_LEVEL=|^SYSLOG_|^LDAP_|^SMTP_|^INSTALL_' | sed -E 's/(^[^=]+_(PASSWORD|PW)=).+/\1***/i' | xargs -n1 echo ' ' # Show variables
 	[ ! "$DB_ADAPTER" = 'sqlite3' ] || echo 'Warning: Using sqlite3 as redmine database' >&2
 
 	# Write db config
@@ -120,30 +123,47 @@ setupRedmine() {
 		fi
 	fi
 
-	# Wait for DB to become available
-	until ERROR=$(echo "SELECT 1;" | gosu redmine rails db -p 2>&1); do
-		echo "Waiting for database $DB_ADAPTER://$DB_USERNAME@$DB_HOST:$DB_PORT/$DB_DATABASE: $ERROR"
-		ERROR=
-		sleep 1
-	done
+	# Wait until DB is available
+	waitForDB
 
-	# Migrate DB
-	if [ "$1" != 'rake' -a -z "$REDMINE_NO_DB_MIGRATE" ]; then
-		echo "Migrating database. Disable this by setting REDMINE_NO_DB_MIGRATE=true" >&2
-		gosu redmine rake db:migrate || return 1
+	# Restore backup if instance is not initialized
+	if [ "$INSTALL_BACKUP_FILE" ]; then
+		if ! echo "SELECT 'tablesinstalled' FROM trackers;" | gosu redmine rails db -p | grep -qw tablesinstalled; then
+			([ -f "$INSTALL_BACKUP_FILE" ] || (echo "Backup file $INSTALL_BACKUP_FILE not found" >&2; false)) &&
+			echo "Initializing empty installation from backup INSTALL_BACKUP_FILE=$INSTALL_BACKUP_FILE" &&
+			restore "$INSTALL_BACKUP_FILE" || return 1
+		else
+			echo "Not restoring backup $INSTALL_BACKUP_FILE since DB already initialized" >&2
+			INSTALL_BACKUP_FILE=
+		fi
+	fi
+
+	# Migrate database if not already done by backup restore script
+	[ "$INSTALL_BACKUP_FILE" ] || migrateRedmine || return 1
+
+	# Wait for mail server to start
+	[ ! "$SMTP_ENABLED" = 'true' ] ||
+		awaitSuccess "Waiting for TCP service $SMTP_HOST:$SMTP_PORT" nc -zvw1 "$SMTP_HOST" "$SMTP_PORT"
+}
+
+migrateRedmine() {
+	# Migrate DB and clear cache and sessions
+	if [ "$1" != 'rake' -a "$INSTALL_MIGRATE" = 'true' ]; then
+		echo "Migrating database. Disable this by setting INSTALL_MIGRATE=false" >&2
+		gosu redmine rake db:migrate &&
+		gosu redmine rake tmp:cache:clear &&
+		gosu redmine rake tmp:sessions:clear || return 1
 	fi
 
 	# Insert Redmine default configuration
-	if echo "SELECT COUNT(*)||'trackers' FROM trackers;" | gosu redmine rails db -p | grep -qw '0trackers' && [ -z "$REDMINE_NO_DEFAULT_DATA" ]; then
-		echo "Inserting default configuration data. Disable this by setting REDMINE_NO_DEFAULT_DATA=true" >&2
-		gosu redmine rake redmine:load_default_data &&
-		gosu redmine rake tmp:cache:clear &&
-		gosu redmine rake tmp:sessions:clear ||
+	if echo "SELECT COUNT(*)||'trackers' FROM trackers;" | gosu redmine rails db -p | grep -qw '0trackers' && [ "$INSTALL_DEFAULT_DATA" = 'true' ]; then
+		echo "Inserting default configuration data. Disable this by setting INSTALL_DEFAULT_DATA=false" >&2
+		gosu redmine rake redmine:load_default_data ||
 		return 1
 	fi
 
 	# Install or migrate Redmine Backlogs plugin
-	if echo "SELECT COUNT(*)||'rbsettings' FROM settings WHERE name='plugin_redmine_backlogs';" | gosu redmine rails db -p | grep -qw '0rbsettings' && [ -z "$REDMINE_NO_DEFAULT_DATA" ]; then # Install
+	if echo "SELECT COUNT(*)||'rbsettings' FROM settings WHERE name='plugin_redmine_backlogs';" | gosu redmine rails db -p | grep -qw '0rbsettings' && [ "$INSTALL_DEFAULT_DATA" = 'true' ]; then # Install
 		gosu redmine rake redmine:backlogs:install \
 			corruptiontest=true \
 			story_trackers=Feature \
@@ -158,7 +178,7 @@ setupRedmine() {
 			xargs -n1 echo "INSERT INTO workflows(type,assignee,author,tracker_id,role_id,old_status_id,new_status_id) VALUES('WorkflowTransition','f','f'," | \
 			gosu redmine rails db -p 1>/dev/null ||
 		(echo "Failed to copy 'Feature' tracker workflow to 'Task' tracker workflow. You may have to create the workflow yourself to be able to interact with a backlogs task board" >&2; exit 7)
-	elif [ -z "$REDMINE_NO_DB_MIGRATE" ]; then # Migrate
+	elif [ "$INSTALL_MIGRATE" = 'true' ]; then # Migrate
 		gosu redmine rake redmine:plugins:migrate || return 1
 	fi
 
@@ -228,18 +248,24 @@ setupRedmine() {
 		done
 	fi
 
-	chown -R redmine:redmine files log public/plugin_assets
-	rm -f tmp/pids/server.pid
+	chown -R redmine:redmine files log public/plugin_assets || return 1
+}
 
-	# Wait for mail server to start
-	[ ! "$SMTP_ENABLED" = 'true' ] \
-		|| awaitSuccess "Waiting for TCP service $SMTP_HOST:$SMTP_PORT" nc -zvw1 "$SMTP_HOST" "$SMTP_PORT"
+# Waits until database is available
+waitForDB() {
+	until ERROR=$(echo "SELECT 1;" | gosu redmine rails db -p 2>&1); do
+		echo "Waiting for database $DB_ADAPTER://$DB_USERNAME@$DB_HOST:$DB_PORT/$DB_DATABASE: $ERROR"
+		ERROR=
+		sleep 1
+	done
 }
 
 backup() {
-	[ "$DB_ADAPTER" = postgresql ] || (echo "Works with postgresql only (algorythm container)" >&2; false) &&
-	[ "$1" ] || (echo "Usage backup DESTINATIONFILE" >&2; false) &&
-	[ ! -f "$1" ] || (echo "Backup file $1 already exists" >&2; false) || return 1
+	([ "$DB_ADAPTER" = postgresql ] || (echo "Works with postgresql only (algorythm container)" >&2; false)) &&
+	([ "$1" ] || (echo "Usage: backup DESTINATION" >&2; false)) &&
+	([ ! -f "$1" ] || (echo "Backup file $1 already exists" >&2; false)) &&
+	([ ! -f /var/run/restore.pid ] || (echo "Cannot backup: Restore action in progress" >&2; false)) &&
+	waitForDB &&
 	BACKUP_ID="redmine-backlogs_$(date +'%y-%m-%d_%H-%M-%S')" &&
 	BAK_TMP_DIR=$(mktemp -d) &&
 	BAK_DIR=$BAK_TMP_DIR/$BACKUP_ID &&
@@ -249,7 +275,7 @@ backup() {
 	tail -3 $SQL_FILE | grep -qx '\-\- PostgreSQL database dump complete' &&
 	cp -r files $BAK_DIR/files &&
 	tar -cjf "$1" -C $BAK_TMP_DIR $BACKUP_ID \
-		|| (echo 'Dump failed' >&2; false)
+		|| (echo 'Backup failed' >&2; false)
 	STATUS=$?
 	rm -rf $BAK_TMP_DIR 2>/dev/null
 	return $STATUS
@@ -257,6 +283,8 @@ backup() {
 
 restore() {
 	([ "$DB_ADAPTER" = postgresql ] || (echo "Works with postgresql only (algorythm container)" >&2; false)) &&
+	([ "$1" ] || (echo "Usage: restore BACKUP" >&2; false)) &&
+	waitForDB &&
 	echo $$ > /var/run/restore.pid &&
 	stopCommand &&
 	EXTRACT_DIR=$(mktemp -d) &&
@@ -269,10 +297,11 @@ restore() {
 	echo "$SQL_RESTORE_RESULT" >&2 &&
 	echo "$SQL_RESTORE_RESULT" | grep -qx 'Restored successfully' &&
 	rm -rf files/* &&
-	find "$FILES_DIR" -mindepth 1 -maxdepth 1 | while read FILE; do mv "$FILE" files || return 1; done
+	find "$FILES_DIR" -mindepth 1 -maxdepth 1 | while read FILE; do mv "$FILE" files || return 1; done &&
 	chown -R redmine:redmine files &&
-	REDMINE_NO_DB_MIGRATE= && # enforce DB migration after restored
-	setupRedmine
+	INSTALL_MIGRATE=true && # enforce DB migration after restored
+	INSTALL_DEFAULT_DATA=false && # Avoid insertion of default data
+	migrateRedmine
 	STATUS=$?
 	rm -rf $EXTRACT_DIR 2>/dev/null
 	rm -f /var/run/restore.pid

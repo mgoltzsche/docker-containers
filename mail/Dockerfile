@@ -51,15 +51,17 @@ smtps     inet  n       -       n       -       -       smtpd\n\
 # Add/cleanup directories
 RUN mkdir /var/mail \
     && chown -R vmail:vmail /var/mail \
-    && chmod 00750 /var/mail \
-    && rm -rf /var/spool/postfix /etc/dovecot/* \
+    && chmod 0700 /var/mail \
+    && rm -rf /etc/dovecot/* \
     && mkdir -m 0755 /var/run/postfix /etc/dovecot/conf.d \
     && touch /etc/dovecot/conf.d/00-empty.conf \
     && chown postfix:root /var/run/postfix \
     && rm -rf /etc/ssl/dovecot
 
-# Expose dovecot maildir volume
+# dovecot maildir volume
 VOLUME /var/mail
+# postfix mail queue volume
+VOLUME /var/spool/postfix
 
 # Postfix smtp ports
 EXPOSE 25 587

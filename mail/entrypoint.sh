@@ -15,6 +15,8 @@ LDAP_MAILBOX_SEARCH_BASE=${LDAP_MAILBOX_SEARCH_BASE:="$LDAP_SUFFIX"}
 LDAP_DOMAIN_SEARCH_BASE=${LDAP_DOMAIN_SEARCH_BASE:="ou=Domains,$LDAP_SUFFIX"}
 SSL_CERT_SUBJ=${SSL_CERT_SUBJ:="/C=DE/ST=Berlin/L=Berlin/O=$LDAP_DOMAIN"}
 TRUSTED_NETWORKS=${TRUSTED_NETWORKS:=false} # true, false or actual value. ATTENTION: In trusted nets plaintext imap auth is allowed + smtp is less restrictive
+DOVECOT_CONF=/etc/dovecot/dovecot.conf
+RESTORE_BACKUP="$RESTORE_BACKUP"
 
 awaitSuccess() {
 	MSG="$1"
@@ -29,23 +31,24 @@ setupSslCertificate() {
 	echo "Configuring SSL certificate ..."
 	if [ -f "/etc/ssl/certs/server.pem" -a -f "/etc/ssl/private/server.key" ]; then
 		echo "Using existing SSL certificate /etc/ssl/{certs/server.pem,private/server.key}"
-		return 0
+		c_rehash /etc/ssl/certs >/dev/null # Map certificates (ca-certificates.csr warning can be ignored safely)
+		return $?
 	fi
-	mkdir -p -m 0755 /var/mail/ssl/private /var/mail/ssl/certs || return 1
-	KEY_FILE="/var/mail/ssl/private/$MACHINE_FQN.key"
-	CERT_FILE="/var/mail/ssl/certs/$MACHINE_FQN.pem"
+	mkdir -p -m 0755 /etc/ssl/private /etc/ssl/certs /etc/ssl/server/private /etc/ssl/server/certs || return 1
+	KEY_FILE="/etc/ssl/server/private/$MACHINE_FQN.key"
+	CERT_FILE="/etc/ssl/server/certs/$MACHINE_FQN.pem"
 	SUBJ="$SSL_CERT_SUBJ/CN=$MACHINE_FQN"
 
 	if [ -f "$KEY_FILE" -a -f "$CERT_FILE" ]; then
 		echo "Using existing SSL certificate: $CERT_FILE"
 	elif [ -f "$KEY_FILE" ]; then
-		echo "WARN: Generating self-signed SSL certificate for '$SUBJ' using existing key $KEY_FILE"
+		echo "WARNING: Generating self-signed SSL certificate for '$SUBJ' using existing key $KEY_FILE"
 		touch "$CERT_FILE" &&
 		chmod 644 "$CERT_FILE" &&
 		ERR="$(openssl req -new -x509 -days 730 -sha512 -subj "$SUBJ" \
 			-key "$KEY_FILE" -out "$CERT_FILE" 2>&1)" || (echo "$ERR" >&2; false)
 	else
-		echo "WARN: Generating self-signed SSL key+certificate for '$SUBJ' into $KEY_FILE"
+		echo "WARNING: Generating self-signed SSL key+certificate for '$SUBJ' into $KEY_FILE"
 		touch "$KEY_FILE" &&
 		chmod 600 "$KEY_FILE" &&
 		# -x509 means self-signed/no cert. req.
@@ -55,30 +58,9 @@ setupSslCertificate() {
 	fi
 
 	rm -f /etc/ssl/certs/server.pem /etc/ssl/private/server.key &&
-	c_rehash /etc/ssl/certs >/dev/null && # Map certificates
+	c_rehash /etc/ssl/certs >/dev/null && # Map certificates (ca-certificates.csr warning can be ignored safely)
 	ln -s "$KEY_FILE" /etc/ssl/private/server.key &&
-	ln -s "$CERT_FILE" /etc/ssl/certs/server.pem || exit 1
-}
-
-setupRsyslog() {
-	rm -f /var/run/rsyslogd.pid || exit 1
-	# Wait until syslog server is available to capture log
-	RSYSLOG_FORWARDING_CFG=
-	if [ "$SYSLOG_FORWARDING_ENABLED" = 'true' ]; then
-		awaitSuccess "Waiting for syslog UDP server $SYSLOG_HOST:$SYSLOG_PORT" nc -uzvw1 "$SYSLOG_HOST" "$SYSLOG_PORT" 2>/dev/null
-		RSYSLOG_FORWARDING_CFG="*.* @$SYSLOG_HOST:$SYSLOG_PORT"
-	fi
-
-	cat > /etc/rsyslog.conf <<-EOF
-		\$ModLoad imuxsock.so # provides local unix socket under /dev/log
-		\$ModLoad omstdout.so # provides messages to stdout
-		\$template stdoutfmt,"%syslogtag% %msg%\n" # light stdout format
-
-		*.* :omstdout:;stdoutfmt # send everything to stdout
-		$RSYSLOG_FORWARDING_CFG
-	EOF
-	[ $? -eq 0 ] || exit 1
-	chmod 444 /etc/rsyslog.conf || exit 1
+	ln -s "$CERT_FILE" /etc/ssl/certs/server.pem || return 1
 }
 
 setupPostfix() {
@@ -86,8 +68,9 @@ setupPostfix() {
 	LDAP_DOMAIN_ATTR='associatedDomain'
 	LDAP_MAILBOX_QUERY='(&(objectClass=mailRecipient)(|(mail=%s)(mailAlternateAddress=%s)))'
 	echo "Configuring postfix ..."
+	chown root:root /var/spool/postfix /var/spool/postfix/pid &&
 	mkdir -p /etc/postfix/ldap &&
-	chmod 00755 /etc/postfix/ldap &&
+	chmod 0755 /var/spool/postfix /var/spool/postfix/pid /etc/postfix/ldap &&
 	chmod 644 /etc/postfix/main.cf &&
 	# Set MACHINE_FQN and TRUSTED_NETS in main.cf
 	sed -Ei "s/^myhostname\s*=.*\$/myhostname = $MACHINE_FQN/" /etc/postfix/main.cf &&
@@ -103,6 +86,7 @@ setupPostfix() {
 		postmaster: root
 		root: $POSTMASTER_EMAIL
 	EOF
+	[ $? -eq 0 ] &&
 	postalias /etc/aliases
 }
 
@@ -125,8 +109,8 @@ postfixLdapConf() {
 
 setupDovecot() {
 	echo "Configuring dovecot ..."
-	mkdir -p -m 0700 /var/mail/maildir &&
-	chown -R vmail:vmail /var/mail/maildir &&
+	mkdir -p -m 0700 /var/mail &&
+	chown -R vmail:vmail /var/mail &&
 	sed -Ei "s/^login_trusted_networks\s*=.*\$/login_trusted_networks = $TRUSTED_NETS/" /etc/dovecot/dovecot.conf &&
 	# Generate dovecot LDAP configuration
 	cat > /etc/dovecot/dovecot-ldap.conf.ext <<-EOF
@@ -137,7 +121,7 @@ setupDovecot() {
 		tls = no
 		auth_bind = yes
 		base = $LDAP_MAILBOX_SEARCH_BASE
-		user_attrs = =mail=maildir:/var/mail/maildir/%d/%n/
+		user_attrs = =mail=maildir:/var/mail/%d/%n/
 		user_filter = (&(objectClass=inetOrgPerson)(mail=%u))
 		pass_attrs = 
 		pass_filter = (&(objectClass=inetOrgPerson)(mail=%u))
@@ -165,7 +149,7 @@ setup() {
 	[ "$POSTMASTER_EMAIL" ] || (echo 'POSTMASTER_EMAIL unset'; false) || exit 1
 
 	echo 'Configuring mailing with:'
-	set | grep -E '^SSL_|^LOGSTASH_|^LDAP_|^TRUSTED_' | sed -E 's/(^[^=]+_(PASSWORD|PW)=).+/\1***/i' | xargs -n1 echo ' ' # Show variables
+	set | grep -E '^SSL_|^LOGSTASH_|^LDAP_|^TRUSTED_|^INSTALL_' | sed -E 's/(^[^=]+_(PASSWORD|PW)=).+/\1***/i' | xargs -n1 echo ' ' # Show variables
 
 	# Set/derive trusted networks
 	TRUSTED_NETS='127.0.0.0/8 [::ffff:127.0.0.0]/104 [::1]/128'
@@ -181,50 +165,103 @@ setup() {
 	fi
 	TRUSTED_NETS="$(echo "$TRUSTED_NETS" | sed 's/\//\\\//g')" # Escape for sed
 
-	# Setup postfix+dovecot+ldap+syslog configuration
-	mkdir -p /var/mail/queue &&
-	chown root:root /var/mail/queue &&
-	setupRsyslog &&
+	# Setup postfix+dovecot+ldap configuration
 	setupSslCertificate &&
 	setupPostfix &&
 	setupDovecot || exit 1
 }
 
 backup() {
-	# TODO: backup without shutting down MTA by moving queued mails to hold queue using
-	#   postsuper -h ALL
-	# and requeue them somehow on restore
+	# ATTENTION: When migrating one mail server to another make sure 
+	#   postfix is shutdown before starting the backup to avoid mail loss.
+	#   Additionally use a backup MX server to avoid any MTA down time:
+	#     Queues incoming mail and forwards it to primary mail server
+	#     when available again
+	RESTART=0
+	! testContainerStarted || RESTART=1
+	([ "$1" ] || (echo "Usage: backup DESTINATION" >&2; false)) &&
+	([ ! -f "$1" ] || (echo "Backup file $1 already exists" >&2; false)) || return 1
+	echo "Backing up mail server. Mail systems will be shutdown meanwhile and restarted afterwards."
+	echo "HINT: When migrating postfix make sure it is shutdown before backup"
+	echo "      and start container with backup command to migrate consistent state."
+	echo "HINT: Run MX backup server to make sure to catch all incoming mail during downtime of primary server."
+	date +'%y-%m-%d %H:%M:%S' > /mail-backup-date.txt &&
 	stopDovecot &&
-	stopPostfix || exit 1
-	BACKUP_DATE=$(date +'%y-%m-%d_%H%M%S')
-	BACKUP_DIR=/backup/mail-$BACKUP_DATE
-	mkdir -p $BACKUP_DIR/etc &&
-	cp /etc/{dovecot/dovecot.conf,postfix/{main.cf,master.cf}} $BACKUP_DIR/etc/ &&
-	cp -R /var/mail $BACKUP_DIR/mail &&
-	startPostfix &&
-	startDovecot
+	stopPostfix || return 1
+	postsuper -h ALL && # Move queued mails to hold queue where they are not touched by postgres
+	tar -cjf "$1" -C / \
+			mail-backup-date.txt \
+			etc/postfix/main.cf \
+			etc/postfix/master.cf \
+			etc/dovecot/dovecot.conf \
+			var/mail \
+			var/spool/postfix/hold \
+		|| (echo 'Backup failed' >&2; rm -f "$1" false)
+	STATUS=$?
+	postsuper -r ALL || return 1 # Requeue hold mails
+	if [ "$STATUS" -eq 0 -a "$RESTART" -eq 1 ]; then
+		startPostfix &&
+		startDovecot || return 1
+	fi
+	rm -rf /mail-backup-date.txt
+	return $STATUS
 }
 
+# Restores a backup. ATTENTION: Also requeues hold mails contained in the backup.
 restore() {
+	RESTART=0
+	! testContainerStarted || RESTART=1
+	([ "$1" ] || (echo "Usage: restore BACKUP" >&2; false)) &&
+	([ -f "$1" ] || (echo "Backup file $1 does not exist" >&2; false)) &&
+	BACKUP_FILES="$(tar tjf "$1")" &&
+	((echo "$BACKUP_FILES" | grep -Eq '^var/mail/.+' && echo "$BACKUP_FILES" | grep -Eq '^var/spool/postfix/hold/' && echo "$BACKUP_FILES" | grep -Eq '^mail-backup-date.txt$') ||
+		(echo "Invalid backup format" >&2; false)) &&
 	stopDovecot &&
-	stopPostfix || exit 1
-	BACKUP_DATE=$(date +'%y-%m-%d_%H%M%S')
-	BACKUP_DIR=/backup/mail-$BACKUP_DATE
-	rm -rf /var/mail &&
-	cp -R $BACKUP_DIR/mail /var/mail &&
-	chown -R vmail:vmail /var/mail/maildir &&
-	chmod 0700 /var/mail/maildir
-	startPostfix &&
-	startDovecot
+	stopPostfix &&
+	tar -xjf "$1" -C / var/mail var/spool/postfix/hold mail-backup-date.txt &&
+	chown -R vmail:vmail /var/mail &&
+	chown -R postfix:postfix /var/spool/postfix/hold &&
+	chmod 0700 /var/mail /var/spool/postfix/hold &&
+	echo "Restored backup from $(cat $BACKUP_DIR/mail-backup-date.txt)" &&
+	postsuper -r ALL # Requeue hold mails from backup
+	STATUS=$?
+	if [ "$STATUS" -eq 0 -a "$RESTART" -eq 1 ]; then
+		startPostfix &&
+		startDovecot || return 1
+	fi
+	rm -f /mail-backup-date.txt
+	return $STATUS
+}
+
+testSyslogRunning() {
+	! processTerminated "$SYSLOG_PID" || exit 1
+	[ -S /dev/log ]
 }
 
 # Start rsyslog to collect postfix & dovecot logs and both
 # print them to stdout and send them to remote syslog server.
 startSyslog() {
 	rm -f /var/run/syslogd.pid
+	RSYSLOG_FORWARDING_CFG=
+	if [ "$SYSLOG_FORWARDING_ENABLED" = 'true' ]; then
+		# Wait until syslog server is available to capture log
+		awaitSuccess "Waiting for syslog UDP server $SYSLOG_HOST:$SYSLOG_PORT" nc -uzvw1 "$SYSLOG_HOST" "$SYSLOG_PORT" 2>/dev/null
+		RSYSLOG_FORWARDING_CFG="*.* @$SYSLOG_HOST:$SYSLOG_PORT"
+	fi
+
+	cat > /etc/rsyslog.conf <<-EOF
+		\$ModLoad imuxsock.so # provides local unix socket under /dev/log
+		\$ModLoad omstdout.so # provides messages to stdout
+		\$template stdoutfmt,"%syslogtag% %msg%\n" # light stdout format
+
+		*.* :omstdout:;stdoutfmt # send everything to stdout
+		$RSYSLOG_FORWARDING_CFG
+	EOF
+	[ $? -eq 0 ] &&
+	chmod 444 /etc/rsyslog.conf || exit 1
 	rsyslogd -n -f /etc/rsyslog.conf &
 	SYSLOG_PID=$!
-	awaitSuccess 'Waiting for local rsyslog' [ -S /dev/log ]
+	awaitSuccess 'Waiting for local rsyslog' testSyslogRunning
 }
 
 startPostfix() {
@@ -232,13 +269,12 @@ startPostfix() {
 }
 
 stopPostfix() {
-	POSTFIX_PID=$(cat /var/mail/queue/pid/master.pid 2>/dev/null)
+	POSTFIX_PID=$(cat /var/spool/postfix/pid/master.pid 2>/dev/null)
 	kill $POSTFIX_PID 2>/dev/null || echo "Couldn't terminate postfix since it is not running" >&2
 	awaitTermination $POSTFIX_PID
 }
 
 startDovecot() {
-	DOVECOT_CONF=/etc/dovecot/dovecot.conf
 	DOVECOT_BASEDIR=$(/usr/sbin/dovecot -c $DOVECOT_CONF -a | grep '^base_dir = ' | sed 's/^base_dir = //') &&
 	mkdir -p "$DOVECOT_BASEDIR" && chown dovecot:dovecot "$DOVECOT_BASEDIR" && chmod 0755 "$DOVECOT_BASEDIR" &&
 	/usr/sbin/dovecot -c "$DOVECOT_CONF"
@@ -263,13 +299,13 @@ terminateGracefully() {
 	trap : SIGHUP SIGINT SIGQUIT SIGTERM # Disable termination call on signal to avoid infinite recursion
 	stopDovecot
 	stopPostfix
-	kill $SYSLOG_PID
+	kill $SYSLOG_PID 2>/dev/null
 	awaitTermination $SYSLOG_PID
 	exit 0
 }
 
 testContainerStarted() {
-	! ps -o comm | grep -Eq '^dovecot|^master' || (echo "Can be run as container start command only" >&2; false) || exit 1
+	ps -o comm | grep -Eq '^dovecot|^master'
 }
 
 # Register signal handler for orderly shutdown
@@ -277,14 +313,23 @@ trap terminateGracefully SIGHUP SIGINT SIGQUIT SIGTERM
 
 case "$1" in
 	run)
-		testContainerStarted
+		! testContainerStarted || (echo "Can be run as container start command only" >&2; false) || exit 1
 		setup
+		rm -f /var/spool/postfix/pid/master.pid "$(/usr/sbin/dovecot -c $DOVECOT_CONF -a | grep '^base_dir = ' | sed 's/^base_dir = //')master.pid"
 		startSyslog
 		if [ ! "$LDAP_STARTUP_CHECK_ENABLED" = 'false' ]; then
 			awaitSuccess "Waiting for LDAP server $LDAP_HOST:$LDAP_PORT" nc -zvw1 "$LDAP_HOST" "$LDAP_PORT"
 		fi
-		startPostfix
-		startDovecot
+		# TODO: restore backup when env var present and container not initialized
+		if [ "$RESTORE_BACKUP" ]; then
+			if [ "$(ls /var/mail)" ]; then
+				echo "Not restoring backup since /var/mail already contains contents"
+			else
+				restore "$RESTORE_BACKUP" || exit 1
+			fi
+		fi
+		startPostfix &&
+		startDovecot || (terminateGracefully; false) || exit 1
 		wait
 	;;
 	backup|restore)

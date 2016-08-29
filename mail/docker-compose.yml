@@ -19,7 +19,8 @@ services:
       LDAP_USER_DN: "${MAIL_LDAP_USER_DN}"
       LDAP_USER_PW: "${MAIL_LDAP_USER_PW}"
       POSTMASTER_EMAIL: max.goltzsche@algorythm.de
+      RESTORE_BACKUP: "/backup/mail-content.tar.bz2"
     volumes:
       - "./../ssl/certs/mail.algorythm.de.pem:/etc/ssl/certs/server.pem"
       - "./../ssl/private/mail.algorythm.de.key:/etc/ssl/private/server.key"
-      #      - "./work:/var/mail"
+      - "./work:/backup"

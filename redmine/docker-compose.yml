@@ -20,6 +20,7 @@ services:
     image: algorythm/redmine-backlogs:latest
     hostname: redmine.algorythm.de
     environment:
+      INSTALL_BACKUP_FILE: /backup/redmine-bak-public.tar.bz2
       DB_ADAPTER: "postgresql"
       DB_USERNAME: redmine
       DB_PASSWORD: "${REDMINE_POSTGRES_PASSWORD}"

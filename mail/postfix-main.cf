@@ -4,7 +4,7 @@
 smtpd_banner = $myhostname ESMTP $mail_name
 
 readme_directory = no
-queue_directory = /var/mail/queue
+queue_directory = /var/spool/postfix
 
 # Syslog facility
 syslog_facility = mail
@@ -38,7 +38,7 @@ alias_maps = hash:/etc/aliases
 virtual_alias_maps = ldap:/etc/postfix/ldap/virtual_aliases.cf
 virtual_mailbox_domains = ldap:/etc/postfix/ldap/virtual_domains.cf
 virtual_mailbox_maps = ldap:/etc/postfix/ldap/virtual_mailboxes.cf
-virtual_mailbox_base = /var/mail/maildir
+virtual_mailbox_base = /var/mail
 virtual_uid_maps = static:5000
 virtual_gid_maps = static:5000
 
@@ -53,7 +53,7 @@ smtpd_tls_mandatory_protocols = !SSLv2, !TLSv1
 smtpd_tls_mandatory_ciphers = medium, high
 smtpd_tls_cert_file = /etc/ssl/certs/server.pem
 smtpd_tls_key_file = /etc/ssl/private/server.key
-#smtpd_tls_CAfile = /var/mail/ssl/certs/ca.pem # Not required when smtpd_tls_cert_file also contains CA cert
+#smtpd_tls_CAfile = /etc/ssl/certs/ca.pem # Not required when smtpd_tls_cert_file also contains CA cert
 smtpd_tls_CApath = /etc/ssl/certs
 smtpd_tls_loglevel = 1
 smtpd_tls_session_cache_database = btree:$data_directory/smtpd_tls_cache
