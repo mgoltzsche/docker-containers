@@ -1,5 +1,4 @@
 #!/bin/sh
-
 FULL_MACHINE_NAME=$(hostname -f)
 INSTANCE_ID=${INSTANCE_ID:=$(hostname -s)}
 INSTANCE_DIR="/etc/dirsrv/slapd-$INSTANCE_ID"
@@ -29,7 +28,7 @@ checkContainer() {
 		echo '####################################################' >&2
 	fi
 	if ! echo "$FULL_MACHINE_NAME" | grep -q '\.'; then
-		echo "Set a fully qualified hostname using docker's -h option. E.g: -h host.domain" >&2
+		echo "Set a fully qualified hostname. E.g. ldap.example.org" >&2
 		exit 1
 	fi
 }
@@ -56,8 +55,8 @@ setupDirsrvInstance() {
 			[General]
 			FullMachineName= $FULL_MACHINE_NAME
 			AdminDomain= $LDAP_INSTALL_ADMIN_DOMAIN
-			SuiteSpotUserID= nobody
-			SuiteSpotGroup= nobody
+			SuiteSpotUserID= dirsrv
+			SuiteSpotGroup= dirsrv
 			ConfigDirectoryAdminID= $LDAP_INSTALL_CONFIG_DIRECTORY_ADMIN_ID
 			ConfigDirectoryAdminPwd= $LDAP_INSTALL_CONFIG_DIRECTORY_ADMIN_PW
 
@@ -237,7 +236,7 @@ backup() {
 	mkdir -p $(dirname $1) &&
 	mkdir -p "$BACKUP_TMP_DIR" &&
 	chmod -R 770 "$BACKUP_TMP_DIR" &&
-	chown -R root:nobody "$BACKUP_TMP_DIR" || return 1
+	chown -R root:dirsrv "$BACKUP_TMP_DIR" || return 1
 	for DB_NAME in $(find /var/lib/dirsrv/slapd-$INSTANCE_ID/db/ -mindepth 1 -maxdepth 1 -type d | xargs -n 1 basename); do
 		ns-slapd db2ldif -D /etc/dirsrv/slapd-$INSTANCE_ID -n $DB_NAME -a "$BACKUP_TMP_DIR/$INSTANCE_ID-$DB_NAME.ldif" || ERROR=$?
 	done
@@ -256,7 +255,7 @@ restore() {
 	EXTRACT_DIR=$(mktemp -d)
 	tar -xjvf "$1" -C $EXTRACT_DIR || exit $?
 	BACKUP_DIR="$EXTRACT_DIR/$(ls $EXTRACT_DIR | head -1)"
-	chown -R root:nobody $EXTRACT_DIR && chmod -R 770 $EXTRACT_DIR
+	chown -R root:dirsrv $EXTRACT_DIR && chmod -R 770 $EXTRACT_DIR
 	ERROR=0
 	for LDIF in $(ls "$BACKUP_DIR" | grep -E '\.ldif$'); do
 		NAMES=$(echo $LDIF | sed -e 's/\.ldif$//')
