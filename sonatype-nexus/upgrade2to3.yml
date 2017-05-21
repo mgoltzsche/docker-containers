@@ -1,0 +1,27 @@
+version: '2'
+services:
+  nexus2:
+    image: sonatype/nexus:2.14.2
+    network_mode: "host"
+    ports:
+      - "8081:8081"
+    volumes:
+      # Put your old nexus 2 data here
+      - "./nexus2data:/sonatype-work"
+  nexus3:
+    # See: http://books.sonatype.com/nexus-book/3.2/reference/upgrading.html#upgrade-version-two
+    # 1. Place your old Nexus 2 data directory in ./nexus2data.
+    # 2. Start only the nexus3 service:
+    #      docker-compose -f upgrade2to3.yml up nexus3
+    # 3. Wait until it started and created the data directory, shut it down,
+    #    set application-port=8083 in nexus3data/etc/nexus.properties and
+    #    start both services:
+    #      docker-compose -f upgrade2to3.yml up
+    # 4. When both started successfully enable the Upgrade Capability in the UIs of both Nexus servers (127.0.0.1:8081/nexus/, 127.0.0.1:8083/).
+    # 5. Follow the migration wizard that is now available as a new menu point.
+    image: algorythm/sonatype-nexus:latest
+    network_mode: "host"
+    ports:
+      - "8083:8083"
+    volumes:
+      - "./nexus3data:/data"

@@ -1,7 +1,7 @@
 FROM java:8-jre-alpine
 MAINTAINER "Max Goltzsche" <max.goltzsche@algorythm.de>
 
-ENV NEXUS_VERSION 3.0.1-01
+ENV NEXUS_VERSION 3.2.0-01
 
 # Create nexus user and group
 RUN addgroup nexus && adduser -S -D -G nexus nexus -h /data -H -s /sbin/nologin
@@ -12,7 +12,8 @@ RUN addgroup nexus && adduser -S -D -G nexus nexus -h /data -H -s /sbin/nologin
 ENV GOSU_VERSION 1.9
 ENV TINI_VERSION v0.9.0
 RUN set -x \
-	&& apk add --no-cache --update gnupg \
+	&& apk add --no-cache --update gnupg ca-certificates openssl \
+	&& update-ca-certificates \
 	&& wget -O /usr/local/bin/gosu "https://github.com/tianon/gosu/releases/download/$GOSU_VERSION/gosu-amd64" \
 	&& wget -O /usr/local/bin/gosu.asc "https://github.com/tianon/gosu/releases/download/$GOSU_VERSION/gosu-amd64.asc" \
 	&& export GNUPGHOME="$(mktemp -d)" \
@@ -43,13 +44,16 @@ RUN set -x \
 	&& tar -xzf nexus.tar.gz \
 	&& mv nexus-$NEXUS_VERSION /nexus \
 	&& mkdir -m 750 /data \
-	&& chown -R nexus:nexus /nexus /data \
-	&& rm -r /nexus/data \
-	&& sed -Ei 's/^(-Dkaraf\.data|-Djava.io.tmpdir)=data/\1=\/data/' /nexus/bin/nexus.vmoptions \
+	&& chown -R root:nexus /nexus /data \
+	&& sed -Ei /nexus/bin/nexus.vmoptions \
+		-e 's/^(-Dkaraf\.data)=.*/\1=\/data/' \
+		-e 's/^(-Djava\.io\.tmpdir)=.*/\1=\/data\/tmp/' \
+		-e '/-XX:\+LogVMOutput/d' \
+		-e '/-XX:LogFile=/d' \
 	&& rm -r "$GNUPGHOME" nexus.tar.gz nexus.tar.gz.asc \
 	&& apk del --purge gnupg
 
-# Add configuration and starter
+# Add starter
 ADD entrypoint.sh /
 RUN chmod 544 /entrypoint.sh
 
