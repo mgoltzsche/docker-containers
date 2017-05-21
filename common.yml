@@ -2,7 +2,7 @@ version: '2'
 services:
   # Consul service discovery + health check
   consul:
-    image: consul:v0.6.4
+    image: consul:0.8.1
     hostname: consul
     command: "agent -server -bootstrap-expect 1 -ui"
     ports:
