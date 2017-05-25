@@ -10,6 +10,7 @@ services:
       LDAP_USER_PW_NGINX: "${NGINX_LDAP_USER_PW}"
   nginx:
     image: algorythm/nginx:latest
+    build: .
     hostname: web.algorythm.de
     environment:
 #      VHOST_TEST_NAME: "test.algorythm.de"

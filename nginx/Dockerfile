@@ -58,7 +58,7 @@ RUN set -x \
 	&& apk del --purge $BUILD_DEPS
 
 VOLUME /etc/nginx/vhosts
-EXPOSE 80
+EXPOSE 80 443
 
 ADD nginx.conf /etc/nginx/
 ADD proxy_params /etc/nginx/
