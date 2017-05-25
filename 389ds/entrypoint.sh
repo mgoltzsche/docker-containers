@@ -3,14 +3,24 @@ FULL_MACHINE_NAME=$(hostname -f)
 INSTANCE_ID=${INSTANCE_ID:=$(hostname -s)}
 INSTANCE_DIR="/etc/dirsrv/slapd-$INSTANCE_ID"
 
+# For all vars see: https://access.redhat.com/documentation/en-us/red_hat_directory_server/10/html/configuration_command_and_file_reference/core_server_configuration_reference#cnconfig
 NSSLAPD_LISTENHOST=${NSSLDAPD_LISTENHOST:=0.0.0.0}
 NSSLAPD_PORT=${NSSLAPD_PORT:=389}
 NSSLAPD_ROOTDN=${NSSLAPD_ROOTDN:='cn=dirmanager'}
 NSSLAPD_ROOTPW=${NSSLAPD_ROOTPW:=Secret123}
 NSSLAPD_ALLOW_ANONYMOUS_ACCESS=${NSSLAPD_ALLOW_ANONYMOUS_ACCESS:=off} # off|rootdse|on
+#NSSLAPD_LOGGING_BACKEND=syslog
+NSSLAPD_AUDITLOG=/dev/stdout
+NSSLAPD_ERRORLOG=/dev/stderr
+NSSLAPD_ERRORLOG_MODE=620
+NSSLAPD_ERRORLOG_LOGROTATIONTIME=-1
+NSSLAPD_ERRORLOG_MAXLOGSIZE=-1
 NSSLAPD_ACCESSLOG_LOGGING_ENABLED=${NSSLAPD_ACCESSLOG_LOGGING_ENABLED:=on}
-NSSLAPD_LOGGING_BACKEND=syslog
+NSSLAPD_ACCESSLOG=/dev/stdout
+NSSLAPD_ACCESSLOG_MODE=620
 NSSLAPD_ACCESSLOG_LOGBUFFERING=off
+NSSLAPD_ACCESSLOG_LOGROTATIONTIME=-1
+NSSLAPD_ACCESSLOG_MAXLOGSIZE=-1
 # (Add any valid 389ds cn=config attribute as env var)
 
 LDAP_OPTS=${LDAP_OPTS:=-x -h localhost -p "$NSSLAPD_PORT" -D "$NSSLAPD_ROOTDN" -w "$NSSLAPD_ROOTPW"}
@@ -100,6 +110,7 @@ configureInstance() {
 		CFG_VALUE="$(eval "echo \"\$$CFG_VAR\"" | sed 's/\//\\\//g')"
 		setDseConfigAttr "$CFG_KEY" "$CFG_VALUE" || return 1
 	done
+	#cat "$INSTANCE_DIR/dse.ldif"
 }
 
 configureSystemUsers() {
@@ -224,7 +235,10 @@ startRsyslog() {
 }
 
 startDirsrv() {
-	ns-slapd -D "$INSTANCE_DIR" -i /var/run/dirsrv/ns-slapd.pid $@
+	(
+		ns-slapd -D "$INSTANCE_DIR" -i /var/run/dirsrv/ns-slapd.pid -d 0 $@
+		terminateGracefully
+	) &
 }
 
 backup() {
@@ -299,7 +313,7 @@ case "$1" in
 		fi
 		checkContainer
 		setupDirsrvInstance # Installs if directory doesn't exist
-		startRsyslog # Starts if not started
+#		startRsyslog # Starts if not started
 		if ! ps -C ns-slapd >/dev/null; then
 			rm -f /var/log/dirsrv/slapd-ldap/*
 			([ ! "$FIRST_START" -o ! "$LDAP_INSTALL_BACKUP_FILE" ] || restore "$LDAP_INSTALL_BACKUP_FILE") &&
