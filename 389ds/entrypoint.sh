@@ -1,6 +1,6 @@
 #!/bin/sh
-FULL_MACHINE_NAME=$(hostname -f)
-INSTANCE_ID=${INSTANCE_ID:=$(hostname -s)}
+FULL_MACHINE_NAME=${FULL_MACHINE_NAME:=$(hostname -f)}
+INSTANCE_ID=${INSTANCE_ID:=default}
 INSTANCE_DIR="/etc/dirsrv/slapd-$INSTANCE_ID"
 
 # For all vars see: https://access.redhat.com/documentation/en-us/red_hat_directory_server/10/html/configuration_command_and_file_reference/core_server_configuration_reference#cnconfig
@@ -23,7 +23,7 @@ NSSLAPD_ACCESSLOG_MAXLOGSIZE=-1
 # (Add any valid 389ds cn=config attribute as env var)
 
 LDAP_OPTS=${LDAP_OPTS:=-x -h localhost -p "$NSSLAPD_PORT" -D "$NSSLAPD_ROOTDN" -w "$NSSLAPD_ROOTPW"}
-LDAP_INSTALL_DOMAIN=${LDAP_INSTALL_DOMAIN:=$(hostname -d)}
+LDAP_INSTALL_DOMAIN=${LDAP_INSTALL_DOMAIN:=$(echo "$FULL_MACHINE_NAME" | sed -E 's/^[^\.]+\.//')}
 LDAP_INSTALL_SUFFIX=${LDAP_INSTALL_SUFFIX:=$(echo "dc=$LDAP_INSTALL_DOMAIN" | sed 's/\./,dc=/g')}
 LDAP_INSTALL_ADMIN_DOMAIN=${LDAP_INSTALL_ADMIN_DOMAIN:=$LDAP_INSTALL_DOMAIN}
 LDAP_INSTALL_ADMIN_DOMAIN_SUFFIX=${LDAP_INSTALL_ADMIN_DOMAIN_SUFFIX:=$LDAP_INSTALL_SUFFIX}
@@ -37,7 +37,7 @@ checkContainer() {
 		echo '####################################################' >&2
 	fi
 	if ! echo "$FULL_MACHINE_NAME" | grep -q '\.'; then
-		echo "Set a fully qualified hostname. E.g. ldap.example.org" >&2
+		echo "Set FULL_MACHINE_NAME env var or container hostname as fully qualified hostname!" >&2
 		exit 1
 	fi
 }

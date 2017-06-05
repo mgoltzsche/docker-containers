@@ -3,10 +3,8 @@ services:
   ldap:
     image: algorythm/389ds:latest
     build: .
-    hostname: ldap.algorythm.de
-    ports:
-      - "389:389"
     environment:
+      FULL_MACHINE_NAME: ldap.algorythm.de
       NSSLAPD_ROOTPW: "${LDAP_ROOT_DN_PWD}"
       LDAP_INSTALL_BACKUP_FILE: "/backup/ldap-bak.tar.bz2"
     volumes:

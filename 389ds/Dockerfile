@@ -1,9 +1,9 @@
 # fedora:24 supports nsslapd-logging-backend config option - centos:7 not
 FROM fedora:25
 MAINTAINER "Max Goltzsche" <max.goltzsche@algorythm.de>
-# Install 389ds, rsyslog, hostname procps-ng (ps), findutils (find, xargs), tar, bzip2
+# Install 389ds, hostname procps-ng (ps), findutils (find, xargs), tar, bzip2
 RUN dnf update -y \
-	&& dnf install -y 389-ds-base rsyslog hostname procps-ng findutils tar bzip2 \
+	&& dnf install -y 389-ds-base hostname procps-ng findutils tar bzip2 \
 	&& dnf clean all \
 	&& rm /var/lock
 
