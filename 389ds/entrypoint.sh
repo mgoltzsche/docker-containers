@@ -9,7 +9,6 @@ NSSLAPD_PORT=${NSSLAPD_PORT:=389}
 NSSLAPD_ROOTDN=${NSSLAPD_ROOTDN:='cn=dirmanager'}
 NSSLAPD_ROOTPW=${NSSLAPD_ROOTPW:=Secret123}
 NSSLAPD_ALLOW_ANONYMOUS_ACCESS=${NSSLAPD_ALLOW_ANONYMOUS_ACCESS:=off} # off|rootdse|on
-#NSSLAPD_LOGGING_BACKEND=syslog
 NSSLAPD_AUDITLOG=/dev/stdout
 NSSLAPD_ERRORLOG=/dev/stderr
 NSSLAPD_ERRORLOG_MODE=620
@@ -203,37 +202,6 @@ waitForTcpService() {
 	awaitSuccess "Waiting for TCP service $1:$2" timeout 1 bash -c "</dev/tcp/$1/$2"
 }
 
-startRsyslog() {
-	ps -C rsyslogd >/dev/null && return 1
-	# Configure syslog forwarding and wait for remote syslog server
-	RSYSLOG_FORWARDING_CFG=
-	if [ "$SYSLOG_FORWARDING_ENABLED" = 'true' ]; then
-		# TODO: Wait for remote syslog
-		#awaitSuccess "Waiting for remote syslog UDP server $SYSLOG_HOST:$SYSLOG_PORT" nc -uzvw1 "$SYSLOG_HOST" "$SYSLOG_PORT" 2>/dev/null
-		RSYSLOG_FORWARDING_CFG="*.* @$SYSLOG_HOST:$SYSLOG_PORT"
-	fi
-
-	# Write rsyslog config
-	cat > /etc/rsyslog.conf <<-EOF
-		\$ModLoad imuxsock.so # provides local unix socket under /dev/log
-		\$ModLoad omstdout.so # provides messages to stdout
-		\$template stdoutfmt,"%syslogtag% %msg%\n" # light stdout format
-
-		*.* :omstdout:;stdoutfmt # send everything to stdout
-		$RSYSLOG_FORWARDING_CFG
-	EOF
-	[ $? -eq 0 ] || exit 1
-	chmod 444 /etc/rsyslog.conf || exit 1
-
-	# Start rsyslog
-	rm -f /var/run/syslogd.pid
-	(
-		rsyslogd -n -f /etc/rsyslog.conf
-		terminateGracefully # Terminate whole container if syslogd somehow terminates
-	) &
-	awaitSuccess 'Waiting for local rsyslog' [ -S /dev/log ]
-}
-
 startDirsrv() {
 	(
 		ns-slapd -D "$INSTANCE_DIR" -i /var/run/dirsrv/ns-slapd.pid -d 0 $@
@@ -295,7 +263,7 @@ terminatePid() {
 
 terminateGracefully() {
 	trap : SIGHUP SIGINT SIGQUIT SIGTERM # Disable termination call on signal to avoid infinite recursion
-	for PID in $(slapdPID) $(ps h -o pid -C rsyslogd); do
+	for PID in $(slapdPID); do
 		terminatePid "$PID"
 	done
 }
@@ -313,7 +281,6 @@ case "$1" in
 		fi
 		checkContainer
 		setupDirsrvInstance # Installs if directory doesn't exist
-#		startRsyslog # Starts if not started
 		if ! ps -C ns-slapd >/dev/null; then
 			rm -f /var/log/dirsrv/slapd-ldap/*
 			([ ! "$FIRST_START" -o ! "$LDAP_INSTALL_BACKUP_FILE" ] || restore "$LDAP_INSTALL_BACKUP_FILE") &&
