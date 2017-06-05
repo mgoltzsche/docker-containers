@@ -1,9 +1,6 @@
 #!/bin/sh
 
-SYSLOG_FORWARDING_ENABLED=${SYSLOG_FORWARDING_ENABLED:=false}
-SYSLOG_HOST=${SYSLOG_HOST:=syslog}
-SYSLOG_PORT=${SYSLOG_PORT:=514}
-PG_ENCODING=${PG_ENCODING:=utf8}
+PG_ENCODING=${PG_ENCODING:-utf8}
 
 # Runs the provided command until it succeeds.
 # Takes the error message to be displayed if it doesn't succeed as first argument.
@@ -25,6 +22,8 @@ isPostgresStarted() {
 # Configures postgres on first container start.
 # Every container start it creates/updates users + dbs and runs init scripts.
 setupPostgres() {
+	chown root:postgres /var/lib/postgresql &&
+	chmod 775 /var/lib/postgresql || exit 1
 	FIRST_START=
 	if [ ! -s "$PGDATA/PG_VERSION" ]; then
 		# Create initial database directory
@@ -36,7 +35,7 @@ setupPostgres() {
 	fi
 
 	# Start postgres locally for user and DB setup
-	gosu postgres postgres -c listen_addresses=localhost &
+	gosu postgres postgres -c listen_addresses=127.0.0.1 &
 
 	# Wait for postgres start
 	awaitSuccess 'Waiting for local postgres to start before setup' isPostgresStarted $!
@@ -114,7 +113,7 @@ backup() {
 			STATUS=0
 			export PGPASSWORD="$CMD_PASSWORD"
 			# maybe add -O
-			pg_dump -h localhost -p 5432 -U "$CMD_USERNAME" -E $PG_ENCODING -n public -O \
+			pg_dump -h 127.0.0.1 -p 5432 -U "$CMD_USERNAME" -E $PG_ENCODING -n public -O \
 				--inserts --blobs --no-tablespaces --no-owner --no-privileges \
 				--disable-triggers --disable-dollar-quoting --serializable-deferrable \
 				"$CMD_DATABASE" || STATUS=1
@@ -124,7 +123,7 @@ backup() {
 		restore-plain)
 			STATUS=0
 			export PGPASSWORD="$CMD_PASSWORD"
-			(psql -h localhost -p 5432 -U "$CMD_USERNAME" "$CMD_DATABASE" -X -c 'SELECT 1' || (echo "Invalid credentials"; false)) &&
+			(psql -h 127.0.0.1 -p 5432 -U "$CMD_USERNAME" "$CMD_DATABASE" -X -c 'SELECT 1' || (echo "Invalid credentials"; false)) &&
 			echo "Restoring database $CMD_DATABASE" >&2 &&
 			gosu postgres dropdb "$CMD_DATABASE" &&
 			createDB "$CMD_DATABASE" "$CMD_USERNAME" || STATUS=1
@@ -132,9 +131,9 @@ backup() {
 				if [ $# -eq 5 ]; then
 					CMD_FILE="$5"
 					([ ! "$CMD_FILE" ] || [ ! -f "$CMD_FILE" ] || (echo "SQL restore file does not exist: $CMD_FILE" >&2; false)) &&
-					cat "$CMD_FILE" | psql -h localhost -p 5432 -U "$CMD_USERNAME" "$CMD_DATABASE" -X -v ON_ERROR_STOP=1 || STATUS=1
+					cat "$CMD_FILE" | psql -h 127.0.0.1 -p 5432 -U "$CMD_USERNAME" "$CMD_DATABASE" -X -v ON_ERROR_STOP=1 || STATUS=1
 				else
-					psql -h localhost -p 5432 -U "$CMD_USERNAME" "$CMD_DATABASE" -X -v ON_ERROR_STOP=1 &&
+					psql -h 127.0.0.1 -p 5432 -U "$CMD_USERNAME" "$CMD_DATABASE" -X -v ON_ERROR_STOP=1 &&
 					echo "Restored successfully" || STATUS=1
 				fi
 			fi
@@ -161,34 +160,8 @@ startBackupServer() {
 
 backupClient() {
 	# TODO: check for line '-- PostgreSQL database dump complete'
-	printf 'dump-plain\nredmine\nredmine\nredminesecret' | nc -w 3 localhost 5433
-}
-
-# Starts a local syslog server to collect and forward postgres logs.
-startRsyslog() {
-	echo "Starting rsyslogd ..."
-	rm -f /var/run/rsyslogd.pid || exit 1
-	SYSLOG_FORWARDING_CFG=
-	if [ "$SYSLOG_FORWARDING_ENABLED" = 'true' ]; then
-		awaitSuccess "Waiting for syslog UDP server $SYSLOG_HOST:$SYSLOG_PORT" nc -uzvw1 "$SYSLOG_HOST" "$SYSLOG_PORT"
-		SYSLOG_FORWARDING_CFG="*.* @$SYSLOG_HOST:$SYSLOG_PORT"
-	fi
-
-	cat > /etc/rsyslog.conf <<-EOF
-		\$ModLoad imuxsock.so # provides local unix socket under /dev/log
-		\$ModLoad omstdout.so # provides messages to stdout
-		\$template stdoutfmt,"%syslogtag% %msg%\n" # light stdout format
-
-		*.* :omstdout:;stdoutfmt # send everything to stdout
-		$SYSLOG_FORWARDING_CFG
-	EOF
-	[ $? -eq 0 ] &&
-	chmod 444 /etc/rsyslog.conf || exit 1
-
-	# Start rsyslog to collect logs
-	rsyslogd -n -f /etc/rsyslog.conf &
-	SYSLOG_PID=$!
-	awaitSuccess 'Waiting for local rsyslog' [ -S /dev/log ]
+	# TODO: pass user credentials
+	printf 'dump-plain\nredmine\nredmine\nredminesecret' | nc -w 3 127.0.0.1 5433
 }
 
 # Provides postgres' current PID
@@ -217,7 +190,6 @@ terminateGracefully() {
 	trap : SIGHUP SIGINT SIGQUIT SIGTERM # Unregister signal handler to avoid infinite recursion
 	terminatePid $BACKUP_SERVER_PID
 	terminatePid $(postgresPid)
-	terminatePid $SYSLOG_PID
 	exit 0
 }
 
@@ -225,7 +197,6 @@ case "$1" in
 	postgres)
 		# Register signal handler for orderly shutdown
 		trap terminateGracefully SIGHUP SIGINT SIGQUIT SIGTERM || exit 1
-		startRsyslog
 		setupPostgres
 		isProcessTerminated "$(postgresPid)" || (echo 'Postgres is already running' >&2; false) || exit 1
 		(
