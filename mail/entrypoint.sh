@@ -68,9 +68,9 @@ setupPostfix() {
 	LDAP_DOMAIN_ATTR='associatedDomain'
 	LDAP_MAILBOX_QUERY='(&(objectClass=mailRecipient)(|(mail=%s)(mailAlternateAddress=%s)))'
 	echo "Configuring postfix ..."
+	mkdir -p /etc/postfix/ldap /var/spool/postfix/pid &&
 	chown root:root /var/spool/postfix /var/spool/postfix/pid &&
-	mkdir -p /etc/postfix/ldap &&
-	chmod 0755 /var/spool/postfix /var/spool/postfix/pid /etc/postfix/ldap &&
+	chmod 0755 /var/spool/postfix /etc/postfix/ldap /var/spool/postfix/pid &&
 	chmod 644 /etc/postfix/main.cf &&
 	# Set MACHINE_FQN and TRUSTED_NETS in main.cf
 	sed -Ei "s/^myhostname\s*=.*\$/myhostname = $MACHINE_FQN/" /etc/postfix/main.cf &&
@@ -333,9 +333,9 @@ case "$1" in
 		wait
 	;;
 	backup|restore)
-		$@
+		"$@"
 	;;
 	*)
-		exec $1
+		exec "$@"
 	;;
 esac

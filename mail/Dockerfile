@@ -1,24 +1,21 @@
-FROM alpine:3.4
+FROM alpine:3.5
 MAINTAINER "Max Goltzsche" <max.goltzsche@algorythm.de>
 
+# TODO: Check and remove env vars
 ENV DOMAIN algorythm.de
 ENV LDAP_SUFFIX dc=algorythm,dc=de
 ENV SYSLOG_MARK_INTERVAL 60
-# Health checks registered by registrator container
-#ENV SERVICE_25_CHECK_TCP true # supported since consul 0.6
-#ENV SERVICE_25_CHECK_INTERVAL 30s
-#ENV SERVICE_25_CHECK_TIMEOUT 1s
-# see bottom for checks
 
 # Add user
 RUN addgroup -g 5000 vmail && \
     adduser -u 5000 -S -D -G vmail vmail -h /var/mail -H -s /sbin/nologin
 
 # Install rsyslog, postfix and dovecot + ldap integration
-RUN apk add --no-cache --update rsyslog postfix postfix-ldap dovecot dovecot-ldap ca-certificates
+RUN apk add --no-cache --update rsyslog postfix postfix-ldap dovecot dovecot-ldap ca-certificates \
+	&& rm -rf /etc/dovecot/* /etc/ssl/dovecot
 
 # Install tini for signal processing (graceful container termination) and zombie killing
-ENV TINI_VERSION v0.9.0
+ENV TINI_VERSION v0.14.0
 RUN set -x \
 	&& apk add --no-cache --update curl gnupg \
 	&& curl -fSL -o /usr/local/bin/tini "https://github.com/krallin/tini/releases/download/$TINI_VERSION/tini-static" \
@@ -48,15 +45,13 @@ smtps     inet  n       -       n       -       -       smtpd\n\
   -o milter_macro_daemon_name=ORIGINATING' \
   >> /etc/postfix/master.cf
 
-# Add/cleanup directories
+# Add directories
 RUN mkdir /var/mail \
     && chown -R vmail:vmail /var/mail \
     && chmod 0700 /var/mail \
-    && rm -rf /etc/dovecot/* \
     && mkdir -m 0755 /var/run/postfix /etc/dovecot/conf.d \
     && touch /etc/dovecot/conf.d/00-empty.conf \
-    && chown postfix:root /var/run/postfix \
-    && rm -rf /etc/ssl/dovecot
+    && chown postfix:root /var/run/postfix
 
 # dovecot maildir volume
 VOLUME /var/mail
@@ -77,5 +72,5 @@ ENV SERVICE_25_CHECK_INTERVAL 15s
 
 # Configure entrypoint
 ADD entrypoint.sh /
-ENTRYPOINT ["tini", "--", "/entrypoint.sh"]
+ENTRYPOINT ["/entrypoint.sh"]
 CMD ["run"]
