@@ -18,6 +18,7 @@ services:
       PG_USER_REDMINE: "${REDMINE_POSTGRES_PASSWORD}"
   redmine:
     image: algorythm/redmine-backlogs:latest
+    build: .
     hostname: redmine.algorythm.de
     environment:
       INSTALL_BACKUP_FILE: /backup/redmine-bak-public.tar.bz2

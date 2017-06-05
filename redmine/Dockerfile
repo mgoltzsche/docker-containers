@@ -6,13 +6,10 @@ MAINTAINER "Max Goltzsche" <max.goltzsche@algorythm.de>
 RUN addgroup redmine && adduser -S -D -G redmine redmine -h /redmine -H -s /sbin/nologin
 
 # Add required binaries/libraries
-RUN apk add --update --no-cache libstdc++ libxml2 libxslt zlib imagemagick sqlite-libs libpq sqlite postgresql-client git
+RUN apk add --update --no-cache libstdc++ libxml2 libxslt zlib imagemagick sqlite-libs libpq sqlite postgresql-client git curl
 
-# Add gosu for easy step-down from root
-# and tini for signal processing (graceful container termination) and zombie killing
-# (Install all in one RUN block to keep image small without build utils)
-ENV GOSU_VERSION 1.7
-ENV TINI_VERSION v0.9.0
+# Add gosu for easy step-down from root (Install all in one RUN block to keep image small without build utils)
+ENV GOSU_VERSION 1.10
 RUN set -x \
 	&& apk add --update --no-cache gnupg \
 	&& curl -fSL -o /usr/local/bin/gosu "https://github.com/tianon/gosu/releases/download/$GOSU_VERSION/gosu-amd64" \
@@ -23,15 +20,6 @@ RUN set -x \
 	&& rm -r "$GNUPGHOME" /usr/local/bin/gosu.asc \
 	&& chmod +x /usr/local/bin/gosu \
 	&& gosu nobody true \
-	\
-	&& curl -fSL -o /usr/local/bin/tini "https://github.com/krallin/tini/releases/download/$TINI_VERSION/tini-static" \
-	&& curl -fSL -o /usr/local/bin/tini.asc "https://github.com/krallin/tini/releases/download/$TINI_VERSION/tini-static.asc" \
-	&& export GNUPGHOME="$(mktemp -d)" \
-	&& gpg --keyserver ha.pool.sks-keyservers.net --recv-keys 6380DC428747F6C393FEACA59A84159D7001A4E5 \
-	&& gpg --batch --verify /usr/local/bin/tini.asc /usr/local/bin/tini \
-	&& rm -r "$GNUPGHOME" /usr/local/bin/tini.asc \
-	&& chmod +x /usr/local/bin/tini \
-	&& tini -h >/dev/null \
 	&& apk del --purge gnupg
 
 # Download and extract Redmine
@@ -74,7 +62,6 @@ RUN NOKOGIRI_VERSION=$(cat /redmine/Gemfile /redmine/plugins/*/Gemfile 2>/dev/nu
 	&& apk add --update --no-cache $BUILD_DEPS \
 	&& set -ex \
 	&& gem install nokogiri -v "$NOKOGIRI_VERSION" -- --use-system-libraries \
-	&& echo 'gem "remote_syslog_logger", "~> 1.0.3"' >> Gemfile \
 	&& bundle install --without development test \
 	&& for adapter in postgresql sqlite3; do \
 		echo "$RAILS_ENV:" > ./config/database.yml; \
@@ -94,5 +81,5 @@ EXPOSE 3000
 ADD entrypoint.sh /
 RUN chmod 544 /entrypoint.sh
 
-ENTRYPOINT ["tini", "--", "/entrypoint.sh"]
+ENTRYPOINT ["/entrypoint.sh"]
 CMD ["thin", "start"]
