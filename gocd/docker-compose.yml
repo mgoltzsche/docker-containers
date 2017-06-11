@@ -1,0 +1,26 @@
+version: '2'
+services:
+  ldap:
+    extends:
+      file: ../389ds/docker-compose.yml
+      service: ldap
+    environment:
+      LDAP_USER_DN_MAIL: "${MAIL_LDAP_USER_DN}"
+      LDAP_USER_PW_MAIL: "${MAIL_LDAP_USER_PW}"
+  mail:
+    image: algorythm/mail:latest
+    hostname: mail.algorythm.de
+    ports:
+      - "25:25"
+      - "587:587"
+      - "143:143"
+      - "993:993"
+    environment:
+      LDAP_USER_DN: "${MAIL_LDAP_USER_DN}"
+      LDAP_USER_PW: "${MAIL_LDAP_USER_PW}"
+      POSTMASTER_EMAIL: max.goltzsche@algorythm.de
+      RESTORE_BACKUP: "/backup/mail-content.tar.bz2"
+    volumes:
+      - "./../ssl/certs/mail.algorythm.de.pem:/etc/ssl/certs/server.pem"
+      - "./../ssl/private/mail.algorythm.de.key:/etc/ssl/private/server.key"
+      - "./work:/backup"
